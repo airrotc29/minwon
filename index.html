@@ -5,18 +5,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#24584A">
   <title>선민종합관리 민원 처리부</title>
-  <link rel="icon" href="logo.png">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 <div class="app">
   <header class="top">
     <div class="brand">
       <img class="logo" id="logo" alt="선민종합관리" hidden>
-      <span class="logo-mark" id="logo-mark" aria-hidden="true">선민</span>
+      <span class="logo-mark" id="logo-mark" aria-hidden="true">SM</span>
       <div class="brand-text">
         <span class="co" id="co-name">선민종합관리</span>
         <h1>민원 처리부</h1>
@@ -43,6 +44,13 @@
   <button type="button" class="alert" id="reply-alert" data-act="filter" data-f="done" hidden></button>
   <nav class="summary" id="summary" aria-label="상태별 보기"></nav>
   <section class="panel login" id="login" hidden>
+    <div class="brand-card" aria-label="선민종합관리(주)">
+      <div class="bc-sm">SM</div>
+      <div class="bc-fm">FACILITY MANAGEMENT</div>
+      <div class="bc-rule"></div>
+      <div class="bc-name">선민종합관리(주)</div>
+      <div class="bc-slogan">사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</div>
+    </div>
     <form id="f-login" class="sec">
       <h2>로그인</h2>
       <p class="hint">관리사무소에서 받은 아이디(이메일)와 비밀번호로 로그인하세요. 한 번 로그인하면 이 기기에서는 로그인이 유지됩니다.</p>
@@ -55,6 +63,11 @@
     <section class="panel list" id="list" aria-label="민원 목록"></section>
     <section class="panel detail" id="detail" aria-live="polite"></section>
   </main>
+  <footer class="foot">
+    <img src="logo.svg" alt="" width="22" height="22">
+    <span><b>선민종합관리(주)</b> · FACILITY MANAGEMENT</span>
+    <small>사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</small>
+  </footer>
 </div>
 <dialog class="viewer" id="viewer" aria-label="사진 크게 보기">
   <img id="viewer-img" alt="사진">
@@ -63,6 +76,6 @@
 <div class="toast" id="toast" role="status" hidden></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js?v=11"></script>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

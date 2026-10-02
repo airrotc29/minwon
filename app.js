@@ -362,7 +362,7 @@ function filtered(){
 function renderBrand(){
   const s = S.settings;
   const img = $('#logo'), mark = $('#logo-mark');
-  const src = S.logo || 'logo.png';
+  const src = S.logo || 'logo.svg';
   if(img.dataset.src !== src){
     img.dataset.src = src;
     img.onload = () => { img.hidden = false; mark.hidden = true; };
