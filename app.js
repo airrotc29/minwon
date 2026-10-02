@@ -206,7 +206,8 @@ function disconnectGitHub(){
 const store = {
   addComplaint(data){
     const id = uid();
-    return commit(`민원 접수: ${data.location} ${data.title}`, d => { d.complaints.unshift(Object.assign({id}, data)); return id; });
+    const who = data.receivedBy && data.receivedBy !== 'manager' ? ` (${staffName(data.receivedBy)} 접수)` : '';
+    return commit(`민원 접수: ${data.location} ${data.title}${who}`, d => { d.complaints.unshift(Object.assign({id}, data)); return id; });
   },
   /* patch는 덮어쓸 값, ev는 처리 내역에 덧붙일 기록 */
   update(id, patch, ev, message){
@@ -235,7 +236,7 @@ function numbers(){
 
 /* ---------- 보기 ---------- */
 function base(){
-  if(S.role === 'staff') return S.me ? S.complaints.filter(c => c.assignee === S.me) : [];
+  if(S.role === 'staff') return S.me ? S.complaints.filter(c => c.assignee === S.me || c.receivedBy === S.me) : [];
   return S.complaints;
 }
 function filtered(){
@@ -283,13 +284,13 @@ function render(){
 function renderSummary(){
   const b = base();
   const cnt = k => k === 'all' ? b.length : k === 'open' ? b.filter(c => c.status !== 'replied').length : b.filter(c => c.status === k).length;
-  const keys = ['open', ...ORDER.filter(k => S.role === 'manager' || k !== 'received'), 'all'];
+  const keys = ['open', ...ORDER, 'all'];
   const searchVal = $('#q') ? $('#q').value : S.q;
   const hadFocus = document.activeElement && document.activeElement.id === 'q';
   $('#summary').innerHTML = keys.map(k => {
     const label = k === 'open' ? '미결' : k === 'all' ? '전체' : ST[k].chip;
     const dot = ST[k] ? `<i class="dot s-${k}"></i>` : '';
-    const attn = (k === 'done' && S.role === 'manager' && cnt(k) > 0) ? ' attn' : '';
+    const attn = ((k === 'done' || k === 'received') && S.role === 'manager' && cnt(k) > 0) ? ' attn' : '';
     return `<button type="button" class="chip${attn}" data-act="filter" data-f="${k}" aria-pressed="${S.filter === k}">${dot}<b>${cnt(k)}</b><span>${label}</span></button>`;
   }).join('') + `<input type="text" id="q" class="search" placeholder="검색: 동호수·내용·담당" value="${esc(searchVal)}" aria-label="민원 검색">`;
   if(hadFocus){ const q = $('#q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -316,7 +317,7 @@ function renderList(){
   }
   el.innerHTML = head + list.map(c => `
     <button type="button" class="row" data-act="open" data-id="${esc(c.id)}" aria-current="${S.selectedId === c.id && !S.panel}">
-      <span class="l1"><span class="no">#${nums[c.id]}</span><span>${esc(c.category)}</span><span>${esc(c.location)}</span></span>
+      <span class="l1"><span class="no">#${nums[c.id]}</span><span>${esc(c.category)}</span><span>${esc(c.location)}</span>${receiver(c) ? `<span>· ${esc(receiver(c))} 접수</span>` : ''}</span>
       <span class="t">${esc(c.title)}</span>
       <span class="l3"><span class="pill s-${c.status}">${ST[c.status].label}</span>
         ${c.urgent ? '<span class="tag">긴급</span>' : ''}${c.rework && c.status !== 'replied' && c.status !== 'done' ? '<span class="tag">재작업</span>' : ''}${isOverdue(c) ? '<span class="tag">기한 초과</span>' : ''}
@@ -344,12 +345,18 @@ function renderDetail(){
 }
 function resetDetail(){ lastKey = null; render(); }
 
+/* 직원이 받은 민원이면 그 직원 이름, 소장이 받았으면 빈 값 */
+const receiver = c => (c.receivedBy && c.receivedBy !== 'manager') ? staffName(c.receivedBy) : '';
+
 const opts = (arr, sel) => arr.map(v => `<option${v === sel ? ' selected' : ''}>${esc(v)}</option>`).join('');
 const staffOpts = sel => '<option value="">담당 직원 선택</option>' + S.staff.map(s => `<option value="${esc(s.id)}"${s.id === sel ? ' selected' : ''}>${esc(s.name)}${s.duty ? ' · ' + esc(s.duty) : ''}</option>`).join('');
 
 /* 1. 접수 */
 function newForm(){
-  return `<div class="d-head"><span class="no">새 민원</span><h2>민원 접수</h2></div>
+  const staffSelf = S.role === 'staff' ? `
+    <label class="check"><input type="checkbox" id="n-self"> 내가 바로 처리 (소장 지시 없이 내 담당으로)</label>
+    <p class="hint">체크하지 않으면 소장님께 <b>지시 대기</b>로 넘어갑니다. 어느 쪽이든 소장님 화면에 바로 보입니다.</p>` : '';
+  return `<div class="d-head"><span class="no">새 민원${S.role === 'staff' ? ' · 접수자 ' + esc(staffName(S.me)) : ''}</span><h2>민원 접수</h2></div>
   <form id="f-new" class="sec">
     <div class="grid2">
       <label class="fld"><span>동</span><input type="text" id="n-dong" inputmode="numeric" placeholder="101" required></label>
@@ -357,7 +364,7 @@ function newForm(){
       <label class="fld"><span>분류</span><select id="n-cat">${opts(CATS,'시설')}</select></label>
       <label class="fld"><span>접수 경로</span><select id="n-ch">${opts(CHANNELS,'전화')}</select></label>
     </div>
-    <label class="check"><input type="checkbox" id="n-urgent"> 긴급 처리</label>
+    <label class="check"><input type="checkbox" id="n-urgent"> 긴급 처리</label>${staffSelf}
     <label class="fld"><span>민원 제목</span><input type="text" id="n-title" placeholder="거실 천장 누수" required></label>
     <label class="fld"><span>민원 내용</span><textarea id="n-detail" placeholder="민원인이 말한 내용을 그대로 적어 두세요."></textarea></label>
     <p class="hint">공용부 민원은 동에 장소(예: 지하 2층 주차장)를 적고 호수는 비워 두세요.</p>
@@ -436,8 +443,8 @@ function githubSection(){
 }
 
 const EV = {
-  received:{c:'--st-received', t:() => '민원 접수'},
-  assigned:{c:'--st-assigned', t:e => `${staffName(e.staffId)}에게 지시`},
+  received:{c:'--st-received', t:e => e.staffId ? `민원 접수 (${staffName(e.staffId)})` : '민원 접수'},
+  assigned:{c:'--st-assigned', t:e => e.self ? `${staffName(e.staffId)} 직접 처리 시작` : `${staffName(e.staffId)}에게 지시`},
   reassigned:{c:'--st-assigned', t:e => `${staffName(e.staffId)}에게 재지시`},
   rework:{c:'--urgent', t:e => `재작업 지시 → ${staffName(e.staffId)}`},
   progress:{c:'--st-progress', t:e => `${staffName(e.staffId)} 진행 보고`},
@@ -464,6 +471,7 @@ function complaintView(){
   </div>
   <dl class="meta">
     <div><dt>동·호수</dt><dd>${esc(c.location)}</dd></div>
+    <div><dt>접수자</dt><dd>${esc(receiver(c) || '관리소장')}</dd></div>
     <div><dt>분류 · 경로</dt><dd>${esc(c.category)} · ${esc(c.channel)}</dd></div>
   </dl>
   ${c.detail ? `<p class="body-text">${esc(c.detail)}</p>` : ''}
@@ -524,7 +532,15 @@ function managerActions(c){
 
 /* 3. 직원: 진행 보고 · 완료 보고 */
 function staffActions(c, mine){
-  if(!mine) return '<p class="hint">내게 지시된 민원이 아닙니다.</p>';
+  if(!mine){
+    if(c.receivedBy === S.me){
+      const msg = c.status === 'received' ? '내가 접수한 민원입니다. 소장님 지시를 기다리고 있습니다.'
+        : c.status === 'replied' ? '내가 접수한 민원입니다. 회신까지 끝났습니다.'
+        : `내가 접수한 민원입니다. ${esc(staffName(c.assignee))} 담당으로 처리 중입니다.`;
+      return `<div class="act"><p class="hint">${msg}</p></div>`;
+    }
+    return '<p class="hint">내게 지시된 민원이 아닙니다.</p>';
+  }
   if(c.status === 'done') return '<div class="act"><p class="hint">완료 보고를 올렸습니다. 소장이 확인 후 민원인에게 회신합니다.</p></div>';
   if(c.status === 'replied') return '<div class="act"><p class="hint">민원인 회신까지 끝난 민원입니다.</p></div>';
   return `<div class="act"><form id="f-report" class="sec">
@@ -603,7 +619,9 @@ document.addEventListener('click', e => {
   if(a === 'role'){ S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
   else if(a === 'open'){ S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
-  else if(a === 'new'){ S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
+  else if(a === 'new'){
+    if(S.role === 'staff' && !S.me){ toast('먼저 오른쪽 위에서 내 이름을 선택하세요'); $('#me-select').focus(); return; }
+    S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
   else if(a === 'settings'){ S.panel = 'settings'; render(); $('#detail').scrollIntoView({block:'nearest'}); }
   else if(a === 'cancel'){ S.panel = null; render(); }
   else if(a === 'copy'){ copyText(b.dataset.text); }
@@ -661,10 +679,20 @@ document.addEventListener('submit', e => {
   if(f.id === 'f-new'){
     const at = now(), ch = val('n-ch'), dong = val('n-dong'), ho = val('n-ho');
     const location = /^\d+$/.test(dong) ? `${dong}동${ho ? ' ' + ho + (/^\d+$/.test(ho) ? '호' : '') : ''}` : [dong, ho].filter(Boolean).join(' ');
-    const data = { title:val('n-title'), detail:val('n-detail'), location, dong, ho, 
+    const byStaff = S.role === 'staff' && S.me;
+    const self = byStaff && document.getElementById('n-self').checked;
+    const data = { title:val('n-title'), detail:val('n-detail'), location, dong, ho,
       category:val('n-cat'), channel:ch, urgent:document.getElementById('n-urgent').checked, status:'received',
-      assignee:null, instruction:'', due:'', rework:false, createdAt:at, updatedAt:at, events:[event('received', {at, text:`${ch}(으)로 접수`})] };
-    run(f, async () => { const id = await store.addComplaint(data); S.selectedId = id; S.panel = null; S.filter = 'open'; }, '민원을 접수했습니다. 담당 직원에게 지시하세요.');
+      receivedBy: byStaff ? S.me : 'manager',
+      assignee:null, instruction:'', due:'', rework:false, createdAt:at, updatedAt:at,
+      events:[event('received', Object.assign({at, text:`${ch}(으)로 접수`}, byStaff ? {staffId:S.me} : {}))] };
+    if(self){
+      Object.assign(data, {status:'assigned', assignee:S.me, instruction:'직접 접수 후 처리'});
+      data.events.push(event('assigned', {staffId:S.me, self:true, text:'직접 접수해 처리 시작'}));
+    }
+    const msg = !byStaff ? '민원을 접수했습니다. 담당 직원에게 지시하세요.'
+      : self ? '접수했습니다. 처리 후 보고를 올려 주세요.' : '접수했습니다. 소장님께 지시 대기로 전달됩니다.';
+    run(f, async () => { const id = await store.addComplaint(data); S.selectedId = id; S.panel = null; S.filter = 'open'; }, msg);
   }
   else if(f.id === 'f-assign' && c){
     const sid = val('as-staff'); if(!sid){ toast('담당 직원을 선택하세요'); return; }
