@@ -23,7 +23,7 @@ const ST = {
 const ORDER = ['received','assigned','progress','done','replied'];
 const CATS = ['시설','전기','설비(급배수)','승강기','소음·층간','주차','청소·미화','보안·경비','관리비','기타'];
 const CHANNELS = ['전화','방문','문자','인터폰','게시판'];
-const METHODS = ['문자','카톡','전화','방문'];
+const METHODS = ['인터폰','방문','전화','문자','카톡','안내문 부착'];
 
 /* ---------- 저장소 ----------
  * 기본: 이 기기 브라우저(localStorage)
@@ -243,7 +243,7 @@ function filtered(){
   if(S.filter === 'open') b = b.filter(c => c.status !== 'replied');
   else if(S.filter !== 'all') b = b.filter(c => c.status === S.filter);
   const q = S.q.trim();
-  if(q) b = b.filter(c => [c.title, c.detail, c.location, c.complainant, c.phone, c.category, staffName(c.assignee)].some(v => String(v || '').includes(q)));
+  if(q) b = b.filter(c => [c.title, c.detail, c.location, c.category, staffName(c.assignee)].some(v => String(v || '').includes(q)));
   return b;
 }
 
@@ -291,7 +291,7 @@ function renderSummary(){
     const dot = ST[k] ? `<i class="dot s-${k}"></i>` : '';
     const attn = (k === 'done' && S.role === 'manager' && cnt(k) > 0) ? ' attn' : '';
     return `<button type="button" class="chip${attn}" data-act="filter" data-f="${k}" aria-pressed="${S.filter === k}">${dot}<b>${cnt(k)}</b><span>${label}</span></button>`;
-  }).join('') + `<input type="text" id="q" class="search" placeholder="검색: 이름·동호수·내용" value="${esc(searchVal)}" aria-label="민원 검색">`;
+  }).join('') + `<input type="text" id="q" class="search" placeholder="검색: 동호수·내용·담당" value="${esc(searchVal)}" aria-label="민원 검색">`;
   if(hadFocus){ const q = $('#q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 }
 
@@ -352,8 +352,6 @@ function newForm(){
   return `<div class="d-head"><span class="no">새 민원</span><h2>민원 접수</h2></div>
   <form id="f-new" class="sec">
     <div class="grid2">
-      <label class="fld"><span>민원인 이름</span><input type="text" id="n-name" placeholder="홍길동" autocomplete="off" required></label>
-      <label class="fld"><span>연락처</span><input type="tel" id="n-phone" placeholder="010-0000-0000" autocomplete="off" required></label>
       <label class="fld"><span>동</span><input type="text" id="n-dong" inputmode="numeric" placeholder="101" required></label>
       <label class="fld"><span>호수</span><input type="text" id="n-ho" inputmode="numeric" placeholder="1203"></label>
       <label class="fld"><span>분류</span><select id="n-cat">${opts(CATS,'시설')}</select></label>
@@ -457,7 +455,6 @@ function complaintView(){
   }
   const no = numbers()[c.id];
   const mine = S.role === 'staff' && c.assignee === S.me;
-  const tel = (c.phone || '').replace(/[^0-9+]/g, '');
   const order = (c.instruction && c.status !== 'received') ? `<div class="order${c.rework ? ' rework' : ''}"><span class="k">${c.rework ? '재작업 지시' : '지시 사항'} · ${esc(staffName(c.assignee))}${c.due ? ' · 기한 ' + fmtDate(c.due) : ''}</span><p>${esc(c.instruction)}</p></div>` : '';
   return `
   <div class="d-head">
@@ -466,8 +463,6 @@ function complaintView(){
     <div class="pills"><span class="pill s-${c.status}">${ST[c.status].label}</span>${c.urgent ? '<span class="tag">긴급</span>' : ''}${isOverdue(c) ? '<span class="tag">기한 초과</span>' : ''}</div>
   </div>
   <dl class="meta">
-    <div><dt>민원인</dt><dd>${esc(c.complainant || '-')}</dd></div>
-    <div><dt>연락처</dt><dd>${c.phone ? `<a class="phone" href="tel:${esc(tel)}">${esc(c.phone)}</a><button type="button" class="btn sm" data-act="copy" data-text="${esc(c.phone)}">복사</button>` : '-'}</dd></div>
     <div><dt>동·호수</dt><dd>${esc(c.location)}</dd></div>
     <div><dt>분류 · 경로</dt><dd>${esc(c.category)} · ${esc(c.channel)}</dd></div>
   </dl>
@@ -503,11 +498,10 @@ function managerActions(c){
     html += `<${final ? 'div class="act"' : 'details class="more" id="dt-notice"'}>
       ${final ? '<h3>민원인에게 처리 결과 회신</h3>' : '<summary>민원인에게 중간 안내</summary>'}
       <form id="f-reply" class="sec" data-final="${final}">
-        <p class="hint">${c.phone ? `연락처 <span class="phone">${esc(c.phone)}</span> · ` : ''}문구를 고친 뒤 복사해 문자나 카톡으로 보내고, 보낸 방법을 기록하세요.</p>
+        <p class="hint">문구를 고친 뒤 복사해 보내거나 인터폰·방문으로 알리고, 알린 방법을 기록하세요.</p>
         <textarea id="rp-text" rows="9">${esc(replyTemplate(c))}</textarea>
         <div class="btns">
           <button type="button" class="btn" data-act="copy-reply">문구 복사</button>
-          ${c.phone ? '<button type="button" class="btn" data-act="sms">문자 앱 열기</button>' : ''}
           <button type="button" class="btn" data-act="reset-reply">기본 문구로</button>
           <span class="spacer"></span>
           <select id="rp-method" style="width:auto" aria-label="보낸 방법">${opts(METHODS,'문자')}</select>
@@ -546,8 +540,8 @@ function replyTemplate(c){
   const s = S.settings;
   const head = [s.company || COMPANY, s.buildingName ? `${s.buildingName} 관리사무소` : '관리사무소'].join(' ');
   const tel = s.officePhone ? `\n문의: 관리사무소 ${s.officePhone}` : '';
-  const name = c.complainant ? `${c.complainant}님, 안녕하세요.\n` : '';
-  const where = [c.location, c.title].filter(Boolean).join(' / ');
+  const name = c.location ? `${c.location} 입주민님, 안녕하세요.\n` : '안녕하세요.\n';
+  const where = c.title || c.category;
   if(c.status === 'done'){
     const d = lastEv(c, 'done');
     return `[${head}]\n${name}접수하신 민원(${where})의 처리 결과를 알려드립니다.\n\n■ 처리 내용: ${d ? d.text : ''}\n■ 처리 일시: ${d ? fmt(d.at) : ''}\n\n불편을 드려 죄송합니다. 처리 후에도 불편하신 점이 있으면 언제든 연락 주세요.${tel}`;
@@ -609,17 +603,11 @@ document.addEventListener('click', e => {
   if(a === 'role'){ S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
   else if(a === 'open'){ S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
-  else if(a === 'new'){ S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-name'); if(f) f.focus(); }
+  else if(a === 'new'){ S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
   else if(a === 'settings'){ S.panel = 'settings'; render(); $('#detail').scrollIntoView({block:'nearest'}); }
   else if(a === 'cancel'){ S.panel = null; render(); }
   else if(a === 'copy'){ copyText(b.dataset.text); }
   else if(a === 'copy-reply'){ const t = document.getElementById('rp-text'); copyText(t.value, t); }
-  else if(a === 'sms'){
-    const c = find(S.selectedId); if(!c) return;
-    const tel = c.phone.replace(/[^0-9+]/g, '');
-    const sep = /iPhone|iPad|Mac/.test(navigator.userAgent) ? '&' : '?';
-    location.href = `sms:${tel}${sep}body=${encodeURIComponent(val('rp-text'))}`;
-  }
   else if(a === 'reset-reply'){ const c = find(S.selectedId); if(c) document.getElementById('rp-text').value = replyTemplate(c); }
   else if(a === 'sync-now'){ pull(true); }
   else if(a === 'gh-disconnect'){
@@ -673,7 +661,7 @@ document.addEventListener('submit', e => {
   if(f.id === 'f-new'){
     const at = now(), ch = val('n-ch'), dong = val('n-dong'), ho = val('n-ho');
     const location = /^\d+$/.test(dong) ? `${dong}동${ho ? ' ' + ho + (/^\d+$/.test(ho) ? '호' : '') : ''}` : [dong, ho].filter(Boolean).join(' ');
-    const data = { title:val('n-title'), detail:val('n-detail'), location, dong, ho, complainant:val('n-name'), phone:val('n-phone'),
+    const data = { title:val('n-title'), detail:val('n-detail'), location, dong, ho, 
       category:val('n-cat'), channel:ch, urgent:document.getElementById('n-urgent').checked, status:'received',
       assignee:null, instruction:'', due:'', rework:false, createdAt:at, updatedAt:at, events:[event('received', {at, text:`${ch}(으)로 접수`})] };
     run(f, async () => { const id = await store.addComplaint(data); S.selectedId = id; S.panel = null; S.filter = 'open'; }, '민원을 접수했습니다. 담당 직원에게 지시하세요.');
