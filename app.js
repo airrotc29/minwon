@@ -39,25 +39,45 @@ const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:'', defa
 const CFG = window.MINWON_CONFIG || {};
 const SERVER = !!(CFG.supabaseUrl && CFG.supabaseKey);
 
+const ROLE_LABEL = {hq:'본사 담당자', manager:'관리소장', staff:'직원'};
+
 const S = {
   role: lsGet('role') || 'manager', filter:'open', q:'', selectedId:null, panel:null,
-  me: lsGet('meStaff'), complaints:[], staff:[], settings:Object.assign({}, DEFAULT_SETTINGS),
+  me: lsGet('meStaff'),
+  /* db: 서버에서 받은 전체(권한 범위 안의 모든 사업장). complaints·staff·settings 는 지금 보는 사업장(site)만 */
+  db:{complaints:[], staff:[], settings:{}, sites:[], users:[]},
+  site:'main', complaints:[], staff:[], settings:Object.assign({}, DEFAULT_SETTINGS),
   logo: lsGet(LOGO_KEY) || '',
   sync:{state:'', at:null, msg:''},
-  user:null, authReady:!SERVER, isManager:!SERVER, oldSchema:false, canManage:true, lockMe:false
+  user:null, authReady:!SERVER, access:SERVER ? {} : {role:'manager', site_id:'main'},
+  hq:false, oldSchema:false, canManage:true, lockMe:false
 };
 
-function emptyData(){ return {complaints:[], staff:[], settings:Object.assign({}, DEFAULT_SETTINGS)}; }
+const siteOf = x => x.site || 'main';
+const siteName = id => { const st = S.db.sites.find(x => x.id === (id || S.site)); return st ? st.name : (S.settings.buildingName || ''); };
+function emptyData(){ return {complaints:[], staff:[], settings:{}, sites:[{id:'main', name:'사업장 1'}], users:[]}; }
+/* 지금 보는 사업장의 기록(백업·이 기기 저장용) */
 function snapshot(){ return {complaints:S.complaints, staff:S.staff, settings:S.settings}; }
 function applyData(d){
   d = d || emptyData();
-  S.complaints = d.complaints || [];
-  S.staff = d.staff || [];
-  S.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings);
+  S.db = {complaints:d.complaints || [], staff:d.staff || [], settings:d.settings || {}, sites:d.sites || [], users:d.users || []};
+  if(!S.db.sites.length) S.db.sites = [{id:'main', name:'사업장 1'}];
+  deriveSite();
+}
+/* S.site 가 가리키는 사업장의 민원·직원·설정만 골라낸다(같은 객체를 가리키므로 고치면 db에도 반영) */
+function deriveSite(){
+  if(!S.db.sites.some(x => x.id === S.site)) S.site = S.db.sites[0].id;
+  S.complaints = S.db.complaints.filter(c => siteOf(c) === S.site);
+  S.staff = S.db.staff.filter(x => siteOf(x) === S.site);
+  S.settings = Object.assign({}, DEFAULT_SETTINGS, S.db.settings[S.site]);
   delete S.settings.logo; delete S.settings.photoRepo;
 }
 function readLocal(){ try { return JSON.parse(lsGet(KEY) || 'null'); } catch(e){ return null; } }
-function loadLocal(){ applyData(readLocal()); }
+function loadLocal(){
+  const d = readLocal() || {};
+  applyData({complaints:d.complaints, staff:d.staff, settings:{main:d.settings || {}},
+    sites:[{id:'main', name:(d.settings && d.settings.buildingName) || '사업장 1'}]});
+}
 function persist(){
   if(SERVER) return;
   if(!lsSet(KEY, JSON.stringify(snapshot()))) throw {code:'quota_exceeded'};
@@ -95,17 +115,22 @@ async function fetchAll(table){
     if(data.length < 1000) return rows;
   }
 }
-const rowToComplaint = r => Object.assign({}, r.data, {id:r.id, events:[]});
+const rowToComplaint = r => Object.assign({}, r.data, {id:r.id, site:r.site_id || 'main', events:[]});
 const rowToEvent = r => Object.assign({}, r.data, {id:r.id});
-const rowToStaff = r => Object.assign({}, r.data, {id:r.id});
-function assemble(cRows, eRows, sRows, setRows){
+const rowToStaff = r => Object.assign({}, r.data, {id:r.id, site:r.site_id || 'main'});
+const rowToSite = r => ({id:r.id, name:r.name, archived:!!r.archived, createdAt:r.created_at});
+const rowToUser = r => ({email:r.email, role:r.role, site:r.site_id, name:r.name || ''});
+const bySiteName = (a, b) => (a.archived - b.archived) || a.name.localeCompare(b.name, 'ko');
+function assemble(cRows, eRows, sRows, setRows, siteRows, userRows){
   const map = new Map(cRows.map(r => [r.id, rowToComplaint(r)]));
   eRows.forEach(r => { const c = map.get(r.complaint_id); if(c) c.events.push(rowToEvent(r)); });
   map.forEach(c => c.events.sort(byAt));
   return {
     complaints:[...map.values()].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
     staff:sRows.map(rowToStaff).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '')),
-    settings:(setRows.find(r => r.id === 'main') || {}).data || {}
+    settings:Object.fromEntries(setRows.map(r => [r.id, r.data || {}])),
+    sites:siteRows.map(rowToSite).sort(bySiteName),
+    users:userRows.map(rowToUser).sort((a, b) => a.email.localeCompare(b.email))
   };
 }
 let loading = null;
@@ -114,8 +139,8 @@ function reload(){
   if(loading) return loading;
   loading = (async () => {
     try {
-      const [c, e, s, st] = await Promise.all(['complaints', 'events', 'staff', 'settings'].map(fetchAll));
-      applyData(assemble(c, e, s, st));
+      const [c, e, s, st, si, us] = await Promise.all(['complaints', 'events', 'staff', 'settings', 'sites', 'app_users'].map(fetchAll));
+      applyData(assemble(c, e, s, st, si, us));
       setSync('ok');
       render();
     } catch(err){
@@ -131,20 +156,28 @@ function scheduleReload(){ clearTimeout(reloadT); reloadT = setTimeout(reload, 3
 /* 실시간: 다른 기기의 변경을 받아 바로 반영한다(내 변경의 메아리는 id로 걸러진다) */
 function applyChange(table, p){
   const row = p.new && Object.keys(p.new).length ? p.new : null, old = p.old || {};
+  const db = S.db;
   if(table === 'complaints'){
-    if(p.eventType === 'DELETE') S.complaints = S.complaints.filter(c => c.id !== old.id);
-    else { const cur = find(row.id); if(cur) Object.assign(cur, row.data); else S.complaints.unshift(rowToComplaint(row)); }
+    if(p.eventType === 'DELETE') db.complaints = db.complaints.filter(c => c.id !== old.id);
+    else { const cur = db.complaints.find(c => c.id === row.id); if(cur) Object.assign(cur, row.data, {site:row.site_id || cur.site}); else db.complaints.unshift(rowToComplaint(row)); }
   } else if(table === 'events'){
     if(p.eventType !== 'INSERT') return scheduleReload();
-    const c = find(row.complaint_id);
+    const c = db.complaints.find(x => x.id === row.complaint_id);
     if(!c) return scheduleReload();
     if(!c.events.some(e => e.id === row.id)){ c.events.push(rowToEvent(row)); c.events.sort(byAt); }
   } else if(table === 'staff'){
-    if(p.eventType === 'DELETE') S.staff = S.staff.filter(s => s.id !== old.id);
-    else { const i = S.staff.findIndex(s => s.id === row.id); if(i >= 0) S.staff[i] = rowToStaff(row); else S.staff.push(rowToStaff(row)); }
+    if(p.eventType === 'DELETE') db.staff = db.staff.filter(s => s.id !== old.id);
+    else { const i = db.staff.findIndex(s => s.id === row.id); if(i >= 0) db.staff[i] = rowToStaff(row); else db.staff.push(rowToStaff(row)); }
   } else if(table === 'settings'){
-    if(row && row.id === 'main') S.settings = Object.assign({}, DEFAULT_SETTINGS, row.data);
+    if(p.eventType === 'DELETE') delete db.settings[old.id]; else if(row) db.settings[row.id] = row.data || {};
+  } else if(table === 'sites'){
+    if(p.eventType === 'DELETE') db.sites = db.sites.filter(x => x.id !== old.id);
+    else { const i = db.sites.findIndex(x => x.id === row.id); if(i >= 0) db.sites[i] = rowToSite(row); else db.sites.push(rowToSite(row)); db.sites.sort(bySiteName); }
+  } else if(table === 'app_users'){
+    if(p.eventType === 'DELETE') db.users = db.users.filter(u => u.email !== old.email);
+    else { const i = db.users.findIndex(u => u.email === row.email); if(i >= 0) db.users[i] = rowToUser(row); else db.users.push(rowToUser(row)); }
   }
+  deriveSite();
   setSync('ok');
   render();
 }
@@ -152,7 +185,7 @@ let channel = null;
 function subscribe(){
   if(channel) sb.removeChannel(channel);
   channel = sb.channel('minwon');
-  ['complaints', 'events', 'staff', 'settings'].forEach(t =>
+  ['complaints', 'events', 'staff', 'settings', 'sites', 'app_users'].forEach(t =>
     channel.on('postgres_changes', {event:'*', schema:'public', table:t}, p => applyChange(t, p)));
   channel.subscribe(status => {
     if(status === 'SUBSCRIBED') reload();            // 다시 연결되면 그사이 바뀐 것까지 받는다
@@ -175,16 +208,17 @@ const chunks = (arr, n) => Array.from({length:Math.ceil(arr.length / n)}, (_, i)
 async function importToServer(d){
   d = await migrateLocalPhotos(clone(d));
   const cRows = [], eRows = [];
+  const site = S.site;
   (d.complaints || []).forEach(c => {
-    const {events, id, ...data} = c;
-    cRows.push({id, data});
-    (events || []).forEach(e => { const {id:eid, ...ed} = e; eRows.push({id:eid || uid(), complaint_id:id, data:ed}); });
+    const {events, id, site:_s, ...data} = c;
+    cRows.push({id, site_id:site, data});
+    (events || []).forEach(e => { const {id:eid, ...ed} = e; eRows.push({id:eid || uid(), complaint_id:id, site_id:site, data:ed}); });
   });
-  const sRows = (d.staff || []).map(s => { const {id, ...data} = s; return {id, data}; });
+  const sRows = (d.staff || []).map(s => { const {id, site:_s, ...data} = s; return {id, site_id:site, data}; });
   for(const part of chunks(sRows, 500)) await q(sb.from('staff').upsert(part));
   for(const part of chunks(cRows, 500)) await q(sb.from('complaints').upsert(part));
   for(const part of chunks(eRows, 500)) await q(sb.from('events').upsert(part));
-  if(d.settings){ const st = Object.assign({}, d.settings); delete st.logo; delete st.photoRepo; await q(sb.rpc('merge_settings', {patch:st})); }
+  if(d.settings){ const st = Object.assign({}, d.settings); delete st.logo; delete st.photoRepo; await q(sb.rpc('merge_settings', {patch:st, sid:site})); }
 }
 const clone = o => JSON.parse(JSON.stringify(o));
 
@@ -296,8 +330,8 @@ const store = {
   async addComplaint(data, id){
     id = id || uid();
     const {events, ...fields} = data;
-    if(SERVER) await write(() => q(sb.rpc('add_complaint', {cid:id, cdata:fields, evs:events})));
-    if(!find(id)) S.complaints.unshift(Object.assign({id}, data));
+    if(SERVER) await write(() => q(sb.rpc('add_complaint', {cid:id, cdata:fields, evs:events, sid:S.site})));
+    if(!S.db.complaints.some(c => c.id === id)){ S.db.complaints.unshift(Object.assign({id, site:S.site}, data)); deriveSite(); }
     persist();
     return id;
   },
@@ -313,30 +347,47 @@ const store = {
   },
   async remove(id){
     if(SERVER) await write(() => q(sb.from('complaints').delete().eq('id', id)));
-    S.complaints = S.complaints.filter(c => c.id !== id); persist();
+    S.db.complaints = S.db.complaints.filter(c => c.id !== id); deriveSite(); persist();
   },
   async addStaff(data){
     const id = uid();
-    if(SERVER) await write(() => q(sb.from('staff').insert({id, data})));
-    if(!S.staff.some(s => s.id === id)) S.staff.push(Object.assign({id}, data));
+    if(SERVER) await write(() => q(sb.from('staff').insert({id, site_id:S.site, data})));
+    if(!S.db.staff.some(s => s.id === id)){ S.db.staff.push(Object.assign({id, site:S.site}, data)); deriveSite(); }
     persist();
   },
   async removeStaff(id){
     if(SERVER) await write(() => q(sb.from('staff').delete().eq('id', id)));
-    S.staff = S.staff.filter(s => s.id !== id); persist();
+    S.db.staff = S.db.staff.filter(s => s.id !== id); deriveSite(); persist();
   },
   async saveSettings(data){
-    if(SERVER) await write(() => q(sb.rpc('merge_settings', {patch:data})));
-    S.settings = Object.assign({}, DEFAULT_SETTINGS, S.settings, data); persist();
+    if(SERVER) await write(() => q(sb.rpc('merge_settings', {patch:data, sid:S.site})));
+    S.db.settings[S.site] = Object.assign({}, S.db.settings[S.site], data); deriveSite(); persist();
   },
   async importBackup(d){
     if(SERVER){ await write(() => importToServer(d)); await reload(); return; }
-    applyData(d); persist();
+    applyData({complaints:d.complaints, staff:d.staff, settings:{main:d.settings || {}}, sites:S.db.sites}); persist();
+  },
+  /* 본사: 사업장·계정 관리 */
+  async saveSite(site){
+    await write(() => q(sb.from('sites').upsert({id:site.id, name:site.name, archived:!!site.archived})));
+    const i = S.db.sites.findIndex(x => x.id === site.id);
+    if(i >= 0) Object.assign(S.db.sites[i], site); else S.db.sites.push(Object.assign({archived:false}, site));
+    S.db.sites.sort(bySiteName); deriveSite();
+  },
+  async saveUser(u){
+    await write(() => q(sb.from('app_users').upsert({email:u.email, role:u.role, site_id:u.role === 'hq' ? null : u.site, name:u.name || null})));
+    const i = S.db.users.findIndex(x => x.email === u.email);
+    if(i >= 0) S.db.users[i] = u; else S.db.users.push(u);
+    S.db.users.sort((a, b) => a.email.localeCompare(b.email));
+  },
+  async removeUser(email){
+    await write(() => q(sb.from('app_users').delete().eq('email', email)));
+    S.db.users = S.db.users.filter(x => x.email !== email);
   }
 };
 
 const find = id => S.complaints.find(c => c.id === id);
-const staffName = id => { const s = S.staff.find(x => x.id === id); return s ? s.name : (id ? '(명단에서 삭제된 직원)' : '미배정'); };
+const staffName = id => { const s = S.db.staff.find(x => x.id === id); return s ? s.name : (id ? '(명단에서 삭제된 직원)' : '미배정'); };
 const lastEv = (c, type) => (c.events || []).filter(e => e.type === type).slice(-1)[0];
 const isOverdue = c => c.due && (c.status === 'assigned' || c.status === 'progress') && c.due < ymd(new Date());
 function numbers(){
@@ -370,15 +421,19 @@ function renderBrand(){
     img.src = src;
   }
   $('#co-name').textContent = s.company || COMPANY;
-  $('#bname').textContent = s.buildingName ? `${s.buildingName} 관리사무소` : '접수 · 지시 · 보고 · 회신';
+  const bn = s.buildingName || (SERVER ? siteName() : '');
+  $('#bname').textContent = S.panel === 'hq' ? '본사 · 전체 사업장' : bn ? `${bn} 관리사무소` : '접수 · 지시 · 보고 · 회신';
   document.title = `${s.company || COMPANY} 민원 처리부`;
 }
 
 /* 로그인 계정에 따라 관리소장 화면 허용 여부와 '나는' 직원을 정한다.
- * 관리소장 여부는 서버(app_managers 표)가 정하고, 서버도 같은 기준으로 쓰기를 막는다. */
+ * 역할·사업장은 서버(app_users 표)가 정하고, 서버도 같은 기준으로 쓰기를 막는다. */
 function applyAccount(){
   const email = (S.user && S.user.email || '').toLowerCase();
-  S.canManage = !SERVER || S.isManager;
+  const a = S.access || {};
+  S.hq = SERVER && a.role === 'hq';
+  S.canManage = !SERVER || S.hq || (a.role === 'manager' && a.site_id === S.site);
+  if(!S.hq && S.panel === 'hq') S.panel = null;
   if(!S.canManage){ S.role = 'staff'; if(S.panel === 'settings' || S.panel === 'report') S.panel = null; }
   const st = email && S.staff.find(x => (x.email || '').toLowerCase() === email);
   S.lockMe = !!st;
@@ -395,23 +450,39 @@ function render(){
   if(SERVER && !S.user) return;
   if(S.user) $('#acct').textContent = `${S.user.email.split('@')[0]} · 로그아웃`;
   applyAccount();
+  const noAccess = SERVER && S.user && !S.oldSchema && !(S.access && S.access.role);
+  $('#no-access').hidden = !noAccess;
+  document.body.classList.toggle('no-access', noAccess);
+  if(noAccess) return;
+  const hqPanel = S.panel === 'hq';
+  $('#hq-tools').hidden = !S.hq;
+  $('#hq-back').hidden = hqPanel;
+  const ss = $('#site-select');
+  ss.hidden = !S.hq || hqPanel;
+  ss.innerHTML = S.db.sites.filter(x => !x.archived || x.id === S.site).map(x => `<option value="${esc(x.id)}">${esc(x.name)}${x.archived ? ' (보관)' : ''}</option>`).join('');
+  ss.value = S.site;
+  $('.seg').hidden = hqPanel;
+  $('#new-btn').hidden = hqPanel;
+  $('.work').classList.toggle('single', hqPanel);
+  $('#list').hidden = hqPanel;
+  $('#summary').hidden = hqPanel;
   $('#role-manager').hidden = !S.canManage;
   $('#me-select').disabled = S.lockMe;
   $('#role-manager').setAttribute('aria-pressed', S.role === 'manager');
   $('#role-staff').setAttribute('aria-pressed', S.role === 'staff');
-  $('#mgr-tools').hidden = S.role !== 'manager';
-  $('#staff-picker').hidden = S.role !== 'staff';
+  $('#mgr-tools').hidden = S.role !== 'manager' || hqPanel;
+  $('#staff-picker').hidden = S.role !== 'staff' || hqPanel;
   const sel = $('#me-select');
   sel.innerHTML = '<option value="">이름 선택</option>' + S.staff.map(s => `<option value="${esc(s.id)}">${esc(s.name)}${s.duty ? ' · ' + esc(s.duty) : ''}</option>`).join('');
   sel.value = S.staff.some(s => s.id === S.me) ? S.me : '';
 
   const waiting = S.complaints.filter(c => c.status === 'done').length;
   const al = $('#reply-alert');
-  al.hidden = !(S.role === 'manager' && waiting > 0);
+  al.hidden = !(S.role === 'manager' && waiting > 0) || hqPanel;
   al.innerHTML = `<span>직원 완료 보고가 올라왔습니다. 민원인에게 결과를 알려 주세요.</span><span>회신 대기 <b>${waiting}</b>건 →</span>`;
 
   const warn = S.role !== 'manager' ? '' : !SERVER ? '서버가 아직 설정되지 않아 이 기기에만 저장됩니다. README의 「서버 설정」 안내를 따라 주세요.'
-    : S.oldSchema ? '서버 권한 설정이 아직 예전 버전입니다. Supabase SQL Editor에서 supabase/schema.sql을 다시 실행해 주세요. 그 전까지는 직원 계정도 관리소장 기능을 쓸 수 있습니다.' : storageWarn();
+    : S.oldSchema ? '서버 설정이 아직 예전 버전입니다. Supabase SQL Editor에서 supabase/schema.sql을 다시 실행해 주세요. 그 전까지는 사업장 구분과 본사 기능이 동작하지 않습니다.' : storageWarn();
   const nt = $('#notice'); nt.hidden = !warn; nt.textContent = warn;
 
   renderSummary(); renderList(); renderDetail();
@@ -477,7 +548,7 @@ function renderDetail(){
     el.querySelectorAll('details[id]').forEach(d => { if(d.open) openDet.push(d.id); });
     if(el.contains(document.activeElement)) focusId = document.activeElement.id;
   }
-  el.innerHTML = S.panel === 'new' ? newForm() : S.panel === 'settings' ? settingsView() : S.panel === 'report' ? reportView() : complaintView();
+  el.innerHTML = S.panel === 'new' ? newForm() : S.panel === 'settings' ? settingsView() : S.panel === 'report' ? reportView() : S.panel === 'hq' ? hqView() : complaintView();
   for(const id in saved){ const i = document.getElementById(id); if(!i) continue; if(i.type === 'checkbox') i.checked = saved[id]; else i.value = saved[id]; }
   openDet.forEach(id => { const d = document.getElementById(id); if(d) d.open = true; });
   if(focusId){ const f = document.getElementById(focusId); if(f) f.focus(); }
@@ -533,14 +604,15 @@ const pct = (a, b) => b ? Math.round(a / b * 1000) / 10 : null;
 const fmtDays = v => v == null ? '-' : `${Math.round(v * 10) / 10}일`;
 const fmtPct = v => v == null ? '-' : `${v}%`;
 
-function reportData(ym){
+function reportData(ym, src){
+  const all = src || S.complaints;
   const [s, e] = monthRange(ym);
   const inM = d => d && d >= s && d < e;
   const closedBy = (c, t) => { const d = closedAt(c); return !!d && d < t; };
-  const recv = S.complaints.filter(c => inM(new Date(c.createdAt))).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-  const closedInMonth = S.complaints.filter(c => inM(closedAt(c)));
-  const carried = S.complaints.filter(c => new Date(c.createdAt) < s && !closedBy(c, s));
-  const openEnd = S.complaints.filter(c => new Date(c.createdAt) < e && !closedBy(c, e));
+  const recv = all.filter(c => inM(new Date(c.createdAt))).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  const closedInMonth = all.filter(c => inM(closedAt(c)));
+  const carried = all.filter(c => new Date(c.createdAt) < s && !closedBy(c, s));
+  const openEnd = all.filter(c => new Date(c.createdAt) < e && !closedBy(c, e));
   const doneRecv = recv.filter(c => closedBy(c, e));
   const avg = list => { const v = list.map(c => days(new Date(c.createdAt), closedAt(c))); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
   const withDue = recv.filter(c => c.due && lastEv(c, 'done'));
@@ -683,6 +755,105 @@ function reportCSV(){
   a.download = `민원_${ym}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ---------- 본사 화면 (hq 계정 전용) ---------- */
+function siteKpis(id){
+  const list = S.db.complaints.filter(c => siteOf(c) === id);
+  const today = ymd(new Date()), ym = today.slice(0, 7);
+  const r = reportData(ym, list);
+  return {
+    open:list.filter(c => c.status !== 'replied').length,
+    received:list.filter(c => c.status === 'received').length,
+    done:list.filter(c => c.status === 'done').length,
+    overdue:list.filter(isOverdue).length,
+    urgent:list.filter(c => c.urgent && c.status !== 'replied').length,
+    month:r.recv.length, monthClosed:r.closedInMonth.length,
+    staff:S.db.staff.filter(x => siteOf(x) === id).length,
+    last:list.reduce((m, c) => (c.updatedAt || c.createdAt) > m ? (c.updatedAt || c.createdAt) : m, '')
+  };
+}
+function hqSummaryHTML(ym){
+  const sites = S.db.sites.filter(x => !x.archived);
+  const rows = sites.map(st => Object.assign({site:st}, reportData(ym, S.db.complaints.filter(c => siteOf(c) === st.id))));
+  const tot = rows.reduce((t, r) => ({recv:t.recv + r.recv.length, closed:t.closed + r.closedInMonth.length, done:t.done + r.doneRecv.length, open:t.open + r.openEnd.length, urgent:t.urgent + r.urgent,
+    days:t.days + (r.avgDays != null ? r.avgDays * r.doneRecv.length : 0), carried:t.carried + r.carried.length}), {recv:0, closed:0, done:0, open:0, urgent:0, days:0, carried:0});
+  const td = (v, cls = 'n') => `<td class="${cls}">${v}</td>`;
+  return `<table class="rtable"><thead><tr><th>사업장</th><th>이월</th><th>접수</th><th>긴급</th><th>처리 완료</th><th>처리율</th><th>평균 기간</th><th>월말 미결</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${esc(r.site.name)}</td>${td(r.carried.length)}${td(r.recv.length)}${td(r.urgent)}${td(r.closedInMonth.length)}${td(fmtPct(r.rate))}${td(fmtDays(r.avgDays))}${td(r.openEnd.length)}</tr>`).join('')}
+    <tr class="r-total"><td>합계 (${rows.length}개 사업장)</td>${td(tot.carried)}${td(tot.recv)}${td(tot.urgent)}${td(tot.closed)}${td(fmtPct(pct(tot.done, tot.recv)))}${td(fmtDays(tot.done ? tot.days / tot.done : null))}${td(tot.open)}</tr>
+  </tbody></table>`;
+}
+function hqReportHTML(ym){
+  return `<article class="report">
+    <header class="r-head">
+      <div class="r-brand"><svg viewBox="0 0 96 96" width="34" height="34" aria-hidden="true"><rect width="96" height="96" rx="20" fill="#1E3A7B"/><text x="48" y="58" text-anchor="middle" font-family="'Arial Black','Helvetica Neue',Arial,sans-serif" font-weight="900" font-size="38" letter-spacing="-1" fill="#fff">SM</text><rect x="30" y="68" width="36" height="2" rx="1" fill="#4E6497"/></svg><div><b>선민종합관리(주)</b><small>FACILITY MANAGEMENT</small></div></div>
+      <table class="r-sign"><tr><th rowspan="2">결<br>재</th><th>담당</th><th>팀장</th><th>대표</th></tr><tr><td></td><td></td><td></td></tr></table>
+    </header>
+    <h1 class="r-title">${monthLabel(ym)} 전체 사업장 민원 처리 현황</h1>
+    <dl class="r-meta">
+      <div><dt>보고 기간</dt><dd>${ymd(monthRange(ym)[0])} ~ ${ymd(new Date(monthRange(ym)[1] - 86400000))}</dd></div>
+      <div><dt>작성일</dt><dd>${ymd(new Date())}</dd></div>
+    </dl>
+    <h2>사업장별 현황</h2>
+    ${hqSummaryHTML(ym)}
+    <ul class="r-notes"><li>'처리 완료'는 민원인 회신까지 마친 건, 처리율은 이달 접수분 기준, 평균 기간은 접수부터 회신까지입니다.</li></ul>
+    <footer class="r-foot">선민종합관리(주) · 사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</footer>
+  </article>`;
+}
+function hqView(){
+  const ym = S.hqMonth || (S.hqMonth = ymd(new Date()).slice(0, 7));
+  const sites = S.db.sites, active = sites.filter(x => !x.archived);
+  const tot = active.reduce((t, st) => { const k = siteKpis(st.id); t.open += k.open; t.done += k.done; t.overdue += k.overdue; t.month += k.month; return t; }, {open:0, done:0, overdue:0, month:0});
+  const siteOpts = sel => active.map(x => `<option value="${esc(x.id)}"${x.id === sel ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
+  return `<div class="d-head"><span class="no">본사 담당자 전용</span><h2>본사 · 사업장 현황</h2></div>
+  <div class="r-kpis hq-kpis">
+    <div><b>${active.length}</b><span>운영 사업장</span></div>
+    <div><b>${tot.month}</b><span>이달 접수</span></div>
+    <div><b>${tot.open}</b><span>미결</span></div>
+    <div class="${tot.done ? 'attn' : ''}"><b>${tot.done}</b><span>회신 대기</span></div>
+    <div class="${tot.overdue ? 'attn' : ''}"><b>${tot.overdue}</b><span>기한 초과</span></div>
+  </div>
+  <div class="sec">
+    <h3>사업장별 현황 <span class="hint">(사업장을 누르면 그 사업장 화면으로 들어갑니다)</span></h3>
+    ${active.length ? `<div class="tscroll"><table class="rtable hq-table"><thead><tr><th>사업장</th><th>미결</th><th>지시 대기</th><th>회신 대기</th><th>기한 초과</th><th>긴급</th><th>이달 접수</th><th>이달 완료</th><th>직원</th><th>최근 변동</th></tr></thead><tbody>
+      ${active.map(st => { const k = siteKpis(st.id); const w = (v, warn) => `<td class="n${warn && v ? ' warn' : ''}">${v}</td>`;
+        return `<tr class="click" data-act="hq-enter" data-site="${esc(st.id)}" tabindex="0"><td><b>${esc(st.name)}</b></td>${w(k.open)}${w(k.received, 1)}${w(k.done, 1)}${w(k.overdue, 1)}${w(k.urgent, 1)}${w(k.month)}${w(k.monthClosed)}${w(k.staff)}<td>${k.last ? fmt(k.last) : '-'}</td></tr>`; }).join('')}
+    </tbody></table></div>` : '<p class="hint">운영 중인 사업장이 없습니다. 아래에서 사업장을 추가하세요.</p>'}
+  </div>
+  <div class="sec act">
+    <h3>전체 사업장 월간 현황</h3>
+    <div class="btns"><label class="fld" style="max-width:200px"><span>보고 월</span><input type="month" id="hq-month" value="${esc(ym)}" max="${ymd(new Date()).slice(0, 7)}"></label><span class="spacer"></span><button type="button" class="btn primary" data-act="hq-print">인쇄 / PDF 저장</button></div>
+    <div class="report-preview">${hqSummaryHTML(ym)}</div>
+  </div>
+  <div class="sec act">
+    <h3>사업장 관리 <span class="hint">(${sites.length}개)</span></h3>
+    ${sites.length ? `<ul class="staff-list">${sites.map(st => `<li><form class="site-row" data-site="${esc(st.id)}"><input type="text" value="${esc(st.name)}" aria-label="사업장 이름" required>${st.archived ? '<span class="tag soft">보관</span>' : ''}<button type="submit" class="btn sm">이름 저장</button><button type="button" class="btn sm${st.archived ? '' : ' danger'}" data-act="hq-archive" data-site="${esc(st.id)}" data-on="${st.archived ? '0' : '1'}">${st.archived ? '다시 운영' : '보관'}</button></form></li>`).join('')}</ul>` : ''}
+    <form id="f-site" class="grid2">
+      <label class="fld"><span>새 사업장 이름</span><input type="text" id="site-name" required placeholder="예) 청라 에이스하이테크시티"></label>
+      <div class="btns" style="align-self:end"><button type="submit" class="btn">사업장 추가</button></div>
+    </form>
+    <p class="hint">보관한 사업장은 현황에서 빠지지만 기록은 남고, '다시 운영'으로 되돌릴 수 있습니다. 사업장 안의 단지명·연락처·직원 명단은 그 사업장에 들어가 <b>직원·설정</b>에서 정합니다.</p>
+  </div>
+  <div class="sec act">
+    <h3>계정 관리 <span class="hint">(${S.db.users.length}명)</span></h3>
+    <p class="hint">로그인 계정 자체는 Supabase → Authentication → Users에서 만들고(Add user → Create new user, Auto Confirm 체크), 여기서 그 이메일의 <b>역할과 사업장</b>을 지정합니다. 순서는 상관없습니다. 지정되지 않은 계정은 로그인해도 아무것도 볼 수 없습니다.</p>
+    ${S.db.users.length ? `<div class="tscroll"><table class="rtable"><thead><tr><th>이메일</th><th>역할</th><th>사업장</th><th>이름</th><th></th></tr></thead><tbody>
+      ${S.db.users.map(u => `<tr><td>${esc(u.email)}</td><td>${esc(ROLE_LABEL[u.role] || u.role)}</td><td>${u.role === 'hq' ? '전체' : esc(siteName(u.site) || u.site || '-')}</td><td>${esc(u.name)}</td><td class="n">${u.email === (S.user.email || '').toLowerCase() ? '<span class="hint">나</span>' : `<button type="button" class="btn sm danger" data-act="hq-user-del" data-email="${esc(u.email)}">해제</button>`}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}
+    <form id="f-user" class="grid2">
+      <label class="fld"><span>이메일</span><input type="email" id="u-email" required placeholder="로그인 이메일"></label>
+      <label class="fld"><span>역할</span><select id="u-role"><option value="staff">직원</option><option value="manager">관리소장</option><option value="hq">본사 담당자</option></select></label>
+      <label class="fld"><span>사업장</span><select id="u-site">${siteOpts(S.site)}</select></label>
+      <label class="fld"><span>이름 (선택)</span><input type="text" id="u-name" placeholder="예) 박주임"></label>
+      <div class="btns" style="align-self:end"><button type="submit" class="btn">지정 / 변경</button></div>
+    </form>
+    <p class="hint">직원 공용 계정 하나를 사업장마다 두려면 사업장별로 이메일을 다르게 만들어(예: staff-cheongna@sunmin.kr) 각각 그 사업장의 '직원'으로 지정하세요.</p>
+  </div>`;
+}
+function printHqReport(){
+  $('#print-area').innerHTML = hqReportHTML(S.hqMonth);
+  window.print();
 }
 
 function settingsView(){
@@ -977,7 +1148,22 @@ let delArm = null;
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b) return;
   const a = b.dataset.act;
-  if(a === 'role'){ if(b.dataset.role === 'manager' && !S.canManage) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
+  if(a === 'hq'){ if(!S.hq) return; S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
+  else if(a === 'hq-enter'){ if(!S.hq) return; enterSite(b.dataset.site); }
+  else if(a === 'hq-print'){ if(S.hq) printHqReport(); }
+  else if(a === 'hq-archive'){
+    if(!S.hq) return;
+    const st = S.db.sites.find(x => x.id === b.dataset.site); if(!st) return;
+    const on = b.dataset.on === '1';
+    if(on && !confirm(`'${st.name}' 사업장을 보관할까요? 현황에서 빠지지만 기록은 남습니다.`)) return;
+    run(null, () => store.saveSite({id:st.id, name:st.name, archived:on}), on ? '보관했습니다' : '다시 운영합니다');
+  }
+  else if(a === 'hq-user-del'){
+    if(!S.hq) return;
+    if(!confirm(`${b.dataset.email} 계정의 지정을 해제할까요? 해제하면 로그인해도 아무것도 볼 수 없습니다. (로그인 계정 자체는 Supabase에서 지웁니다)`)) return;
+    run(null, () => store.removeUser(b.dataset.email), '지정을 해제했습니다');
+  }
+  else if(a === 'role'){ if(b.dataset.role === 'manager' && !S.canManage) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
   else if(a === 'open'){ S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
   else if(a === 'new'){
@@ -1058,6 +1244,16 @@ document.addEventListener('change', async e => {
     finally { e.target.value = ''; }
   }
 });
+/* 본사: 사업장 바꾸기 */
+function enterSite(id){
+  if(!S.db.sites.some(x => x.id === id)) return;
+  S.site = id; lsSet('site', id);
+  S.panel = null; S.selectedId = null; S.filter = 'open'; S.q = '';
+  S.role = 'manager'; lsSet('role', 'manager');
+  deriveSite(); resetDetail(); window.scrollTo({top:0});
+}
+$('#site-select').addEventListener('change', e => { if(S.hq) enterSite(e.target.value); });
+document.addEventListener('change', e => { if(e.target.id === 'hq-month' && e.target.value){ S.hqMonth = e.target.value; resetDetail(); } });
 $('#me-select').addEventListener('change', e => { S.me = e.target.value || null; lsSet('meStaff', S.me || ''); S.selectedId = null; render(); });
 
 document.addEventListener('submit', e => {
@@ -1123,6 +1319,23 @@ document.addEventListener('submit', e => {
     const notes = Object.assign({}, S.settings.reportNotes, {[ym]:{note:m.note, plan:m.plan}});
     run(f, () => store.saveSettings({reportNotes:notes, reportTo:m.to, reportFrom:m.from}), `${monthLabel(ym)} 보고서 의견을 저장했습니다`);
   }
+  else if(f.id === 'f-site'){
+    if(!S.hq) return;
+    const name = val('site-name');
+    run(f, () => store.saveSite({id:'s' + uid(), name, archived:false}), `'${name}' 사업장을 추가했습니다`);
+  }
+  else if(f.classList.contains('site-row')){
+    if(!S.hq) return;
+    const st = S.db.sites.find(x => x.id === f.dataset.site), name = (f.querySelector('input').value || '').trim();
+    if(!st || !name) return;
+    run(f, () => store.saveSite({id:st.id, name, archived:st.archived}), '이름을 저장했습니다');
+  }
+  else if(f.id === 'f-user'){
+    if(!S.hq) return;
+    const email = val('u-email').toLowerCase(), role = val('u-role'), site = val('u-site'), name = val('u-name');
+    if(role !== 'hq' && !site){ toast('사업장을 고르세요'); return; }
+    run(f, () => store.saveUser({email, role, site:role === 'hq' ? null : site, name}), `${email} → ${ROLE_LABEL[role]}${role === 'hq' ? '' : ' (' + siteName(site) + ')'}`);
+  }
   else if(f.id === 'f-settings'){
     run(f, () => store.saveSettings({company:val('s-co') || COMPANY, buildingName:val('s-bname'), officePhone:val('s-tel'), defaultOrder:val('s-order')}), '저장했습니다');
   }
@@ -1149,21 +1362,28 @@ async function onSignedIn(user){
   S.user = user;
   if(!first) return;
   setSync('saving', '불러오는 중');
-  try { S.isManager = !!(await q(sb.rpc('is_manager'))); S.oldSchema = false; }
+  try { S.access = (await q(sb.rpc('my_access'))) || {}; S.oldSchema = false; }
   catch(e){
     console.error(e);
-    // 권한 함수가 없는 예전 서버: 지금까지처럼 모두 허용하고 소장님께 SQL 재실행을 안내
+    // 사업장 기능이 없는 예전 서버: 예전 방식(관리소장 여부만)으로 동작하고 SQL 재실행을 안내
     S.oldSchema = e.code !== 'network' && e.code !== 'auth';
-    S.isManager = S.oldSchema;
+    let mgr = false;
+    if(S.oldSchema){ try { mgr = !!(await q(sb.rpc('is_manager'))); } catch(e2){ mgr = true; } }
+    S.access = S.oldSchema ? {role:mgr ? 'manager' : 'staff', site_id:'main'} : {};
   }
-  if(!S.isManager){ S.role = 'staff'; lsSet('role', 'staff'); }
+  const a = S.access;
+  S.hq = a.role === 'hq';
+  if(S.hq){ S.site = lsGet('site') || 'main'; S.panel = 'hq'; }
+  else if(a.site_id) S.site = a.site_id;
+  if(a.role === 'staff'){ S.role = 'staff'; lsSet('role', 'staff'); }
   render();
   await reload();
+  if(S.hq && !S.db.sites.some(x => x.id === S.site && !x.archived)){ const f = S.db.sites.find(x => !x.archived); if(f){ S.site = f.id; deriveSite(); render(); } }
   subscribe();
-  if(S.isManager) offerMigration();
+  if(a.role === 'manager') offerMigration();
 }
 function onSignedOut(){
-  S.user = null; S.isManager = false;
+  S.user = null; S.access = {}; S.hq = false; S.panel = null;
   if(channel){ sb.removeChannel(channel); channel = null; }
   applyData(emptyData());
   photoCache.clear();

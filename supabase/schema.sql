@@ -1,120 +1,225 @@
--- 선민종합관리 민원 처리부 · Supabase 데이터베이스 설정
+-- 선민종합관리 민원 처리부 · Supabase 데이터베이스 설정 (여러 사업장 지원)
 -- Supabase 대시보드 → SQL Editor → New query 에 이 파일 전체를 붙여넣고 Run 을 누르세요.
--- 여러 번 실행해도 안전합니다.
+-- 여러 번 실행해도 안전하고, 예전 버전에서 올릴 때 기존 민원 기록은 '기본 사업장(main)'에 그대로 남습니다.
+--
+-- 역할 (app_users 표에서 지정, 본사 담당자가 앱의 「본사」 화면에서 관리)
+--   hq      본사 담당자 : 모든 사업장을 보고 관리, 사업장·계정 관리
+--   manager 관리소장    : 자기 사업장의 지시·회신·재작업·삭제·직원 명단·설정·월간 보고
+--   staff   직원        : 자기 사업장의 접수, 진행·완료 보고, 사진 올리기만
 
 -- 1) 표 ------------------------------------------------------------------
-create table if not exists public.complaints (      -- 민원 한 건
+create table if not exists public.sites (             -- 사업장(단지·건물)
   id         text primary key,
-  data       jsonb not null default '{}'::jsonb,     -- 동·호수, 제목, 상태, 담당, 기한 …
+  name       text not null,
+  archived   boolean not null default false,          -- 계약 종료 등으로 더 쓰지 않는 사업장
+  created_at timestamptz not null default now()
+);
+create table if not exists public.complaints (        -- 민원 한 건
+  id         text primary key,
+  data       jsonb not null default '{}'::jsonb,      -- 동·호수, 제목, 상태, 담당, 기한 …
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create table if not exists public.events (          -- 처리 내역(접수·지시·보고·회신), 추가만 함
+create table if not exists public.events (            -- 처리 내역(접수·지시·보고·회신), 추가만 함
   id           text primary key,
   complaint_id text not null references public.complaints(id) on delete cascade,
   data         jsonb not null,
   created_at   timestamptz not null default now()
 );
 create index if not exists events_complaint_id_idx on public.events(complaint_id);
-create table if not exists public.staff (           -- 직원 명단
+create table if not exists public.staff (             -- 직원 명단
   id         text primary key,
   data       jsonb not null,
   created_at timestamptz not null default now()
 );
-create table if not exists public.settings (        -- 단지 설정(한 줄: id = 'main')
+create table if not exists public.settings (          -- 사업장별 설정 (id = 사업장 id)
   id   text primary key,
   data jsonb not null default '{}'::jsonb
 );
+create table if not exists public.app_users (         -- 로그인 계정 → 역할·사업장
+  email      text primary key,
+  role       text not null check (role in ('hq', 'manager', 'staff')),
+  site_id    text references public.sites(id),        -- hq 는 비움
+  name       text,
+  created_at timestamptz not null default now()
+);
 
--- 2) 관리소장 계정 목록 -------------------------------------------------
--- 여기에 적힌 이메일로 로그인한 사람만 관리소장 기능(지시·회신·삭제·직원 명단·설정)을 씁니다.
--- 나머지 계정(직원 공용 계정 등)은 접수, 진행·완료 보고, 사진 올리기만 할 수 있습니다.
--- 소장님 계정을 바꾸거나 추가하려면 아래 insert 줄의 이메일을 고쳐 다시 실행하세요.
-create table if not exists public.app_managers (email text primary key);
-alter table public.app_managers enable row level security;   -- 화면에서는 읽기·쓰기 불가
-insert into public.app_managers(email) values ('airrotc29@naver.com') on conflict do nothing;
+-- 사업장 칸 추가(예전 버전에서 올릴 때) — 기존 기록은 모두 기본 사업장 'main'
+alter table public.complaints add column if not exists site_id text not null default 'main';
+alter table public.events     add column if not exists site_id text not null default 'main';
+alter table public.staff      add column if not exists site_id text not null default 'main';
+create index if not exists complaints_site_idx on public.complaints(site_id);
+create index if not exists events_site_idx     on public.events(site_id);
+create index if not exists staff_site_idx      on public.staff(site_id);
 
-create or replace function public.is_manager()
+-- 기본 사업장 보장: 예전 설정의 단지명을 이름으로 쓴다
+insert into public.sites(id, name)
+  select 'main', coalesce(nullif(data->>'buildingName', ''), '사업장 1') from public.settings where id = 'main'
+  on conflict (id) do nothing;
+insert into public.sites(id, name) values ('main', '사업장 1') on conflict (id) do nothing;
+update public.events e set site_id = c.site_id from public.complaints c where c.id = e.complaint_id and e.site_id <> c.site_id;
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'complaints_site_fk') then
+    alter table public.complaints add constraint complaints_site_fk foreign key (site_id) references public.sites(id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'staff_site_fk') then
+    alter table public.staff add constraint staff_site_fk foreign key (site_id) references public.sites(id);
+  end if;
+end $$;
+
+-- 2) 계정 ---------------------------------------------------------------
+-- 본사 담당자(총괄) 계정. 바꾸려면 이메일을 고쳐 다시 실행하거나 앱 「본사 → 계정 관리」에서 지정하세요.
+insert into public.app_users(email, role, site_id, name) values ('airrotc29@naver.com', 'hq', null, '본사')
+  on conflict (email) do update set role = 'hq', site_id = null;
+
+-- 예전 버전(app_managers 표)에서 올리기: 관리소장 → main 관리소장, 나머지 로그인 계정 → main 직원
+do $$ begin
+  if to_regclass('public.app_managers') is not null then
+    insert into public.app_users(email, role, site_id)
+      select lower(email), 'manager', 'main' from public.app_managers on conflict (email) do nothing;
+    insert into public.app_users(email, role, site_id)
+      select lower(u.email), 'staff', 'main' from auth.users u
+      where u.email is not null and lower(u.email) not in (select email from public.app_users)
+      on conflict (email) do nothing;
+    drop table public.app_managers;
+  end if;
+end $$;
+
+-- 로그인한 사람의 역할·사업장 (서버 보안 규칙과 앱 화면이 같은 기준을 쓴다)
+create or replace function public.my_access()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select jsonb_build_object('role', role, 'site_id', site_id, 'name', name)
+       from app_users where email = lower(coalesce(auth.jwt() ->> 'email', ''))),
+    '{}'::jsonb);
+$$;
+create or replace function public.my_role()
+returns text language sql stable security definer set search_path = public as $$
+  select role from app_users where email = lower(coalesce(auth.jwt() ->> 'email', ''));
+$$;
+create or replace function public.my_site()
+returns text language sql stable security definer set search_path = public as $$
+  select site_id from app_users where email = lower(coalesce(auth.jwt() ->> 'email', ''));
+$$;
+create or replace function public.is_hq()
 returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from app_managers
-                 where lower(email) = lower(coalesce(auth.jwt() ->> 'email', '')));
+  select coalesce(public.my_role() = 'hq', false);
+$$;
+create or replace function public.can_view(sid text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select public.is_hq() or (public.my_site() is not null and public.my_site() = sid);
+$$;
+create or replace function public.can_manage(sid text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select public.is_hq() or (public.my_role() = 'manager' and public.my_site() = sid);
+$$;
+create or replace function public.is_manager()          -- 예전 앱 호환
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.my_role() in ('hq', 'manager'), false);
 $$;
 
 -- 3) 보안 규칙 ------------------------------------------------------------
--- 보기: 로그인한 사람 모두 / 직접 쓰기: 관리소장만
+-- 보기: 자기 사업장만(본사는 전체) / 직접 쓰기: 그 사업장 관리소장과 본사만
 -- (직원의 접수·보고는 아래 add_complaint, apply_action 함수가 내용을 검사한 뒤 대신 저장)
+alter table public.sites      enable row level security;
 alter table public.complaints enable row level security;
 alter table public.events     enable row level security;
 alter table public.staff      enable row level security;
 alter table public.settings   enable row level security;
+alter table public.app_users  enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['complaints','events','staff','settings'] loop
+  foreach t in array array['complaints','events','staff'] loop
     execute format('drop policy if exists "로그인 사용자" on public.%I', t);
     execute format('drop policy if exists "보기" on public.%I', t);
     execute format('drop policy if exists "관리소장 쓰기" on public.%I', t);
-    execute format('create policy "보기" on public.%I for select to authenticated using (true)', t);
-    execute format('create policy "관리소장 쓰기" on public.%I for all to authenticated using (public.is_manager()) with check (public.is_manager())', t);
+    execute format('create policy "보기" on public.%I for select to authenticated using (public.can_view(site_id))', t);
+    execute format('create policy "관리소장 쓰기" on public.%I for all to authenticated using (public.can_manage(site_id)) with check (public.can_manage(site_id))', t);
   end loop;
 end $$;
+drop policy if exists "로그인 사용자" on public.settings;
+drop policy if exists "보기" on public.settings;
+drop policy if exists "관리소장 쓰기" on public.settings;
+create policy "보기"        on public.settings for select to authenticated using (public.can_view(id));
+create policy "관리소장 쓰기" on public.settings for all to authenticated using (public.can_manage(id)) with check (public.can_manage(id));
+drop policy if exists "보기" on public.sites;
+drop policy if exists "본사 쓰기" on public.sites;
+create policy "보기"    on public.sites for select to authenticated using (public.can_view(id));
+create policy "본사 쓰기" on public.sites for all to authenticated using (public.is_hq()) with check (public.is_hq());
+drop policy if exists "본사" on public.app_users;
+create policy "본사" on public.app_users for all to authenticated using (public.is_hq()) with check (public.is_hq());
 
--- 민원 접수: 민원과 첫 처리 내역을 한 번에 저장(직원도 가능)
-create or replace function public.add_complaint(cid text, cdata jsonb, evs jsonb)
+-- 민원 접수: 민원과 첫 처리 내역을 한 번에 저장 (직원도 가능, 본사는 사업장(sid)을 지정)
+drop function if exists public.add_complaint(text, jsonb, jsonb);
+create or replace function public.add_complaint(cid text, cdata jsonb, evs jsonb, sid text default null)
 returns void language plpgsql security definer set search_path = public as $$
+declare v_site text;
 begin
-  if auth.uid() is null then raise exception 'not authenticated'; end if;
-  if not is_manager() then
+  if my_role() is null then raise exception 'forbidden'; end if;
+  v_site := coalesce(sid, my_site());
+  if v_site is null then raise exception 'site required'; end if;
+  if not can_view(v_site) then raise exception 'forbidden'; end if;
+  if not can_manage(v_site) then
     if coalesce(cdata->>'status', '') not in ('received', 'assigned') then raise exception 'forbidden'; end if;
     if exists (select 1 from jsonb_array_elements(coalesce(evs, '[]'::jsonb)) e
                where e->>'type' not in ('received', 'assigned')) then raise exception 'forbidden'; end if;
   end if;
-  insert into complaints(id, data) values (cid, cdata);
-  insert into events(id, complaint_id, data)
-    select e->>'id', cid, e from jsonb_array_elements(coalesce(evs, '[]'::jsonb)) e;
+  insert into complaints(id, site_id, data) values (cid, v_site, cdata);
+  insert into events(id, complaint_id, site_id, data)
+    select e->>'id', cid, v_site, e from jsonb_array_elements(coalesce(evs, '[]'::jsonb)) e;
 end $$;
 
 -- 처리: 바뀐 칸만 합치고(덮어쓰지 않음) 처리 내역 한 줄 추가
 -- 직원은 진행 보고(progress)·완료 보고(done)만 가능
 create or replace function public.apply_action(cid text, patch jsonb, ev jsonb)
 returns void language plpgsql security definer set search_path = public as $$
+declare v_site text;
 begin
-  if auth.uid() is null then raise exception 'not authenticated'; end if;
-  if not is_manager() then
+  select site_id into v_site from complaints where id = cid;
+  if not found then raise exception 'gone'; end if;
+  if not can_view(v_site) then raise exception 'forbidden'; end if;
+  if not can_manage(v_site) then
     if ev is null or ev->>'type' not in ('progress', 'done') then raise exception 'forbidden'; end if;
     if exists (select 1 from jsonb_object_keys(coalesce(patch, '{}'::jsonb)) k
                where k not in ('status', 'rework', 'updatedAt')) then raise exception 'forbidden'; end if;
     if coalesce(patch->>'status', 'progress') not in ('progress', 'done') then raise exception 'forbidden'; end if;
   end if;
   update complaints set data = data || coalesce(patch, '{}'::jsonb), updated_at = now() where id = cid;
-  if not found then raise exception 'gone'; end if;
   if ev is not null then
-    insert into events(id, complaint_id, data) values (ev->>'id', cid, ev);
+    insert into events(id, complaint_id, site_id, data) values (ev->>'id', cid, v_site, ev);
   end if;
 end $$;
 
--- 설정: 바뀐 칸만 합치기(보안 규칙에 따라 관리소장만)
-create or replace function public.merge_settings(patch jsonb)
-returns void language sql security invoker set search_path = public as $$
-  insert into settings(id, data) values ('main', patch)
+-- 설정: 바뀐 칸만 합치기 (그 사업장 관리소장·본사만)
+drop function if exists public.merge_settings(jsonb);
+create or replace function public.merge_settings(patch jsonb, sid text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_site text;
+begin
+  v_site := coalesce(sid, my_site());
+  if v_site is null or not can_manage(v_site) then raise exception 'forbidden'; end if;
+  insert into settings(id, data) values (v_site, coalesce(patch, '{}'::jsonb))
   on conflict (id) do update set data = settings.data || excluded.data;
-$$;
+end $$;
 
-revoke execute on function public.is_manager()                      from public, anon;
-revoke execute on function public.add_complaint(text, jsonb, jsonb) from public, anon;
-revoke execute on function public.apply_action(text, jsonb, jsonb)  from public, anon;
-revoke execute on function public.merge_settings(jsonb)             from public, anon;
-grant  execute on function public.is_manager()                      to authenticated;
-grant  execute on function public.add_complaint(text, jsonb, jsonb) to authenticated;
-grant  execute on function public.apply_action(text, jsonb, jsonb)  to authenticated;
-grant  execute on function public.merge_settings(jsonb)             to authenticated;
+do $$
+declare f text;
+begin
+  foreach f in array array['my_access()', 'my_role()', 'my_site()', 'is_hq()', 'can_view(text)', 'can_manage(text)', 'is_manager()',
+                           'add_complaint(text, jsonb, jsonb, text)', 'apply_action(text, jsonb, jsonb)', 'merge_settings(jsonb, text)'] loop
+    execute format('revoke execute on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end $$;
 
 -- 4) 실시간 반영(다른 기기의 변경을 바로 받기) ----------------------------
 do $$
 declare t text;
 begin
-  foreach t in array array['complaints','events','staff','settings'] loop
+  foreach t in array array['complaints','events','staff','settings','sites','app_users'] loop
     if not exists (select 1 from pg_publication_tables
                    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);
@@ -123,6 +228,7 @@ begin
 end $$;
 
 -- 5) 사진 저장소(비공개, 사진 한 장 최대 5MB) ------------------------------
+-- 사진은 photos/<민원id>/<파일명> 으로 저장되며, 그 민원을 볼 수 있는 사람만 볼 수 있다.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('photos', 'photos', false, 5242880, array['image/jpeg', 'image/png'])
 on conflict (id) do nothing;
@@ -131,10 +237,13 @@ drop policy if exists "사진 보기" on storage.objects;
 drop policy if exists "사진 올리기" on storage.objects;
 drop policy if exists "사진 바꾸기" on storage.objects;
 drop policy if exists "사진 지우기" on storage.objects;
-create policy "사진 보기"   on storage.objects for select to authenticated using (bucket_id = 'photos');
-create policy "사진 올리기" on storage.objects for insert to authenticated with check (bucket_id = 'photos');
-create policy "사진 바꾸기" on storage.objects for update to authenticated using (bucket_id = 'photos');
-create policy "사진 지우기" on storage.objects for delete to authenticated using (bucket_id = 'photos');
+create policy "사진 보기"   on storage.objects for select to authenticated
+  using (bucket_id = 'photos' and (public.is_hq() or exists (
+    select 1 from public.complaints c where c.id = split_part(name, '/', 1) and public.can_view(c.site_id))));
+create policy "사진 올리기" on storage.objects for insert to authenticated
+  with check (bucket_id = 'photos' and public.my_role() is not null);
+create policy "사진 바꾸기" on storage.objects for update to authenticated using (bucket_id = 'photos' and public.is_manager());
+create policy "사진 지우기" on storage.objects for delete to authenticated using (bucket_id = 'photos' and public.is_manager());
 
 -- 6) 바뀐 함수가 앱에 바로 보이도록 API 목록 새로 고침 ----------------------
 notify pgrst, 'reload schema';
