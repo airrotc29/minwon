@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 <div class="app">
@@ -25,6 +25,7 @@
     </div>
     <div class="tools">
       <button type="button" class="sync" id="sync" data-act="sync-now" hidden></button>
+      <button type="button" class="acct" id="acct" data-act="logout" hidden></button>
       <div class="seg" role="group" aria-label="화면 선택">
         <button type="button" id="role-manager" data-act="role" data-role="manager" aria-pressed="true">관리소장</button>
         <button type="button" id="role-staff" data-act="role" data-role="staff" aria-pressed="false">직원</button>
@@ -41,6 +42,15 @@
   <div class="notice" id="notice" role="status" hidden></div>
   <button type="button" class="alert" id="reply-alert" data-act="filter" data-f="done" hidden></button>
   <nav class="summary" id="summary" aria-label="상태별 보기"></nav>
+  <section class="panel login" id="login" hidden>
+    <form id="f-login" class="sec">
+      <h2>로그인</h2>
+      <p class="hint">관리사무소에서 받은 아이디(이메일)와 비밀번호로 로그인하세요. 한 번 로그인하면 이 기기에서는 로그인이 유지됩니다.</p>
+      <label class="fld"><span>아이디 (이메일)</span><input type="email" id="lg-email" autocomplete="username" required></label>
+      <label class="fld"><span>비밀번호</span><input type="password" id="lg-pw" autocomplete="current-password" required></label>
+      <div class="btns"><button type="submit" class="btn primary">로그인</button></div>
+    </form>
+  </section>
   <main class="work">
     <section class="panel list" id="list" aria-label="민원 목록"></section>
     <section class="panel detail" id="detail" aria-live="polite"></section>
@@ -51,6 +61,8 @@
   <div class="btns"><a class="btn" id="viewer-dl" download="민원사진.jpg">사진 저장</a><span class="spacer"></span><button type="button" class="btn primary" data-act="viewer-close">닫기</button></div>
 </dialog>
 <div class="toast" id="toast" role="status" hidden></div>
-<script src="app.js?v=8"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
