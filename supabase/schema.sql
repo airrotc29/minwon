@@ -135,3 +135,6 @@ create policy "사진 보기"   on storage.objects for select to authenticated u
 create policy "사진 올리기" on storage.objects for insert to authenticated with check (bucket_id = 'photos');
 create policy "사진 바꾸기" on storage.objects for update to authenticated using (bucket_id = 'photos');
 create policy "사진 지우기" on storage.objects for delete to authenticated using (bucket_id = 'photos');
+
+-- 6) 바뀐 함수가 앱에 바로 보이도록 API 목록 새로 고침 ----------------------
+notify pgrst, 'reload schema';
