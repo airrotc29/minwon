@@ -8,5 +8,5 @@
  * 두 값이 비어 있으면 서버 없이 이 기기에만 저장합니다. */
 window.MINWON_CONFIG = {
   supabaseUrl: 'https://yqmlesdwcuaqlqzrptpp.supabase.co',
-  supabaseKey: ''
+  supabaseKey: 'sb_publishable_d6fQqhPZanniCIO8Bx49YQ_yEeEO_MI'
 };
