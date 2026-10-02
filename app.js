@@ -64,7 +64,16 @@ function saveLocal(d){
 const gh = {
   cfg:null, sha:null, etag:null, timer:null,
   load(){ try { this.cfg = JSON.parse(lsGet(GH_KEY) || 'null'); } catch(e){ this.cfg = null; } return this.cfg; },
-  url(){ return `https://api.github.com/repos/${this.cfg.repo}/contents/${DATA_PATH}`; },
+  url(path){ return `https://api.github.com/repos/${this.cfg.repo}/contents/${(path || DATA_PATH).split('/').map(encodeURIComponent).join('/')}`; },
+  async putFile(path, blob, message){
+    const r = await fetch(this.url(path), {method:'PUT', headers:this.headers({'Content-Type':'application/json'}), body:JSON.stringify({message, content:await blobToB64(blob)})});
+    if(!r.ok) throw ghError(r.status, await r.text());
+  },
+  async getRaw(path){
+    const r = await fetch(this.url(path), {headers:this.headers({'Accept':'application/vnd.github.raw'}), cache:'no-store'});
+    if(!r.ok) throw ghError(r.status, await r.text());
+    return r.blob();
+  },
   headers(extra){ return Object.assign({'Authorization':`Bearer ${this.cfg.token}`, 'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28'}, extra); },
   async fetchData(force){
     const h = this.headers(!force && this.etag ? {'If-None-Match':this.etag} : {});
@@ -181,16 +190,17 @@ async function connectGitHub(repo, token){
   const localHas = local.complaints.length || local.staff.length;
   if(f.missing || !f.data){
     // 서버가 비어 있으면 이 기기 데이터를 처음 데이터로 올린다
-    await gh.put(localHas ? local : emptyData(), '민원 처리부 데이터 시작');
+    await gh.put(localHas ? await migrateLocalPhotos(clone(local)) : emptyData(), '민원 처리부 데이터 시작');
     if(!localHas) applyData(emptyData());
   } else {
     const remoteHas = (f.data.complaints || []).length || (f.data.staff || []).length;
     if(localHas && !remoteHas && confirm('서버 데이터가 비어 있습니다. 이 기기에 있던 민원·직원 기록을 서버로 올릴까요?')){
-      if(!await gh.put(local, '이 기기 데이터 올리기')) throw {code:'gh_conflict'};
+      if(!await gh.put(await migrateLocalPhotos(clone(local)), '이 기기 데이터 올리기')) throw {code:'gh_conflict'};
     } else {
       applyData(f.data);
     }
   }
+  applyData((await gh.fetchData(true)).data);   // 서버에 올라간 최종본으로 맞춘다
   saveLocal(snapshot());
   setSync('ok');
   startPolling();
@@ -203,9 +213,113 @@ function disconnectGitHub(){
   renderSync();
 }
 
+/* ---------- 사진 ----------
+ * 휴대폰 사진은 올리기 전에 줄인다(긴 변 1600px, JPEG).
+ * GitHub 연결 시 비공개 저장소 photos/<민원ID>/ 에, 아니면 이 기기(IndexedDB)에 저장한다.
+ * 처리 내역(event)에는 사진 위치만 photos:[...]로 남긴다. */
+const PHOTO_MAX = 1600, PHOTO_Q = 0.8, PHOTO_LIMIT = 6;
+let pendingPhotos = [];              // 아직 올리지 않은 선택 사진 {blob, url}
+const photoCache = new Map();        // 사진 위치 → 화면용 주소
+
+function blobToB64(blob){
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
+}
+function compressPhoto(file){
+  return new Promise((resolve, reject) => {
+    const src = URL.createObjectURL(file);
+    const img = new Image();
+    img.onerror = () => { URL.revokeObjectURL(src); reject(new Error('image')); };
+    img.onload = () => {
+      URL.revokeObjectURL(src);
+      const scale = Math.min(1, PHOTO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.naturalWidth * scale); cv.height = Math.round(img.naturalHeight * scale);
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      cv.toBlob(b => b ? resolve(b) : reject(new Error('encode')), 'image/jpeg', PHOTO_Q);
+    };
+    img.src = src;
+  });
+}
+const idb = {
+  db:null,
+  open(){
+    if(this.db) return Promise.resolve(this.db);
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('sunmin-minwon-photos', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('photos');
+      r.onsuccess = () => { this.db = r.result; res(this.db); };
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async tx(mode, fn){
+    const db = await this.open();
+    return new Promise((res, rej) => { const t = db.transaction('photos', mode); const q = fn(t.objectStore('photos')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); });
+  },
+  put(id, blob){ return this.tx('readwrite', st => st.put(blob, id)); },
+  get(id){ return this.tx('readonly', st => st.get(id)); }
+};
+async function savePhoto(blob, cid){
+  const name = `${ymd(new Date())}-${uid()}.jpg`;
+  let ref;
+  if(S.sync.mode === 'github'){ ref = `photos/${cid}/${name}`; await gh.putFile(ref, blob, `사진 올리기: ${cid}`); }
+  else { ref = `local:${cid}/${name}`; await idb.put(ref, blob); }
+  photoCache.set(ref, URL.createObjectURL(blob));
+  return ref;
+}
+async function photoURL(ref){
+  if(photoCache.has(ref)) return photoCache.get(ref);
+  let blob;
+  if(ref.startsWith('local:')) blob = await idb.get(ref);
+  else if(gh.cfg) blob = await gh.getRaw(ref);
+  if(!blob) throw new Error('missing');
+  const url = URL.createObjectURL(blob);
+  photoCache.set(ref, url);
+  return url;
+}
+async function uploadPending(cid){
+  const refs = [];
+  for(let i = 0; i < pendingPhotos.length; i++){
+    setSync('saving', `사진 올리는 중 ${i + 1}/${pendingPhotos.length}`);
+    refs.push(await savePhoto(pendingPhotos[i].blob, cid));
+  }
+  return refs;
+}
+function clearPending(){ pendingPhotos.forEach(p => URL.revokeObjectURL(p.url)); pendingPhotos = []; }
+function hydratePhotos(root){
+  root.querySelectorAll('img[data-photo]:not([src])').forEach(img => {
+    photoURL(img.dataset.photo).then(u => { img.src = u; }).catch(() => { img.alt = '사진을 불러오지 못했습니다'; img.closest('.thumb').classList.add('broken'); });
+  });
+}
+function photoPicker(hint){
+  return `<div class="fld"><span>사진 <span class="hint">(${pendingPhotos.length}/${PHOTO_LIMIT}${hint ? ' · ' + hint : ''})</span></span>
+    <div class="thumbs">${pendingPhotos.map((p, i) => `<span class="thumb"><img src="${p.url}" alt="선택한 사진 ${i + 1}"><button type="button" class="x" data-act="photo-remove" data-i="${i}" aria-label="사진 빼기">×</button></span>`).join('')}
+    ${pendingPhotos.length < PHOTO_LIMIT ? `<label class="thumb add"><span>＋<br>사진</span><input type="file" id="photo-input" accept="image/*" multiple hidden></label>` : ''}</div></div>`;
+}
+function thumbsHTML(refs){
+  return refs && refs.length ? `<div class="thumbs">${refs.map(r => `<button type="button" class="thumb" data-act="photo-view" data-ref="${esc(r)}"><img data-photo="${esc(r)}" alt="사진"></button>`).join('')}</div>` : '';
+}
+/* 이 기기에 저장된 사진을 GitHub로 옮기고 사진 위치를 바꾼다 */
+async function migrateLocalPhotos(d){
+  for(const c of d.complaints) for(const ev of (c.events || [])){
+    if(!ev.photos) continue;
+    for(let i = 0; i < ev.photos.length; i++){
+      const ref = ev.photos[i];
+      if(!ref.startsWith('local:')) continue;
+      const blob = await idb.get(ref).catch(() => null);
+      if(!blob) continue;
+      const path = 'photos/' + ref.slice(6);
+      await gh.putFile(path, blob, `사진 올리기: ${c.id}`);
+      ev.photos[i] = path;
+    }
+  }
+  return d;
+}
+
 const store = {
-  addComplaint(data){
-    const id = uid();
+  addComplaint(data, id){
+    id = id || uid();
     const who = data.receivedBy && data.receivedBy !== 'manager' ? ` (${staffName(data.receivedBy)} 접수)` : '';
     return commit(`민원 접수: ${data.location} ${data.title}${who}`, d => { d.complaints.unshift(Object.assign({id}, data)); return id; });
   },
@@ -321,7 +435,7 @@ function renderList(){
       <span class="t">${esc(c.title)}</span>
       <span class="l3"><span class="pill s-${c.status}">${ST[c.status].label}</span>
         ${c.urgent ? '<span class="tag">긴급</span>' : ''}${c.rework && c.status !== 'replied' && c.status !== 'done' ? '<span class="tag">재작업</span>' : ''}${isOverdue(c) ? '<span class="tag">기한 초과</span>' : ''}
-        <span>${esc(c.assignee ? staffName(c.assignee) : '미배정')}</span><span>·</span><span>${fmt(c.createdAt)}</span></span>
+        <span>${esc(c.assignee ? staffName(c.assignee) : '미배정')}</span><span>·</span><span>${fmt(c.createdAt)}</span>${photoCount(c) ? `<span>· 사진 ${photoCount(c)}</span>` : ''}</span>
     </button>`).join('');
 }
 
@@ -332,6 +446,7 @@ function renderDetail(){
   const key = [S.panel, S.selectedId, S.role, S.me].join('|');
   const saved = {}, openDet = [];
   let focusId = null;
+  if(key !== lastKey) clearPending();
   if(key === lastKey){
     el.querySelectorAll('input[id],textarea[id],select[id]').forEach(i => { if(i.type !== 'file') saved[i.id] = i.type === 'checkbox' ? i.checked : i.value; });
     el.querySelectorAll('details[id]').forEach(d => { if(d.open) openDet.push(d.id); });
@@ -341,10 +456,12 @@ function renderDetail(){
   for(const id in saved){ const i = document.getElementById(id); if(!i) continue; if(i.type === 'checkbox') i.checked = saved[id]; else i.value = saved[id]; }
   openDet.forEach(id => { const d = document.getElementById(id); if(d) d.open = true; });
   if(focusId){ const f = document.getElementById(focusId); if(f) f.focus(); }
+  hydratePhotos(el);
   lastKey = key;
 }
 function resetDetail(){ lastKey = null; render(); }
 
+const photoCount = c => (c.events || []).reduce((n, e) => n + (e.photos ? e.photos.length : 0), 0);
 /* 직원이 받은 민원이면 그 직원 이름, 소장이 받았으면 빈 값 */
 const receiver = c => (c.receivedBy && c.receivedBy !== 'manager') ? staffName(c.receivedBy) : '';
 
@@ -367,6 +484,7 @@ function newForm(){
     <label class="check"><input type="checkbox" id="n-urgent"> 긴급 처리</label>${staffSelf}
     <label class="fld"><span>민원 제목</span><input type="text" id="n-title" placeholder="거실 천장 누수" required></label>
     <label class="fld"><span>민원 내용</span><textarea id="n-detail" placeholder="민원인이 말한 내용을 그대로 적어 두세요."></textarea></label>
+    ${photoPicker('현장 사진')}
     <p class="hint">공용부 민원은 동에 장소(예: 지하 2층 주차장)를 적고 호수는 비워 두세요.</p>
     <div class="btns"><button type="button" class="btn" data-act="cancel">취소</button><button type="submit" class="btn primary">접수하기</button></div>
   </form>`;
@@ -477,7 +595,7 @@ function complaintView(){
   ${c.detail ? `<p class="body-text">${esc(c.detail)}</p>` : ''}
   ${order}
   <div class="sec"><h3>처리 내역</h3>
-    <ol class="tl">${(c.events || []).map(e => { const d = EV[e.type] || EV.received; return `<li style="--c:var(${d.c})"><div class="h"><b>${esc(d.t(e))}</b><time>${fmt(e.at)}</time>${e.due ? `<span class="sub">기한 ${fmtDate(e.due)}</span>` : ''}</div>${e.text ? `<p>${esc(e.text)}</p>` : ''}</li>`; }).join('')}</ol>
+    <ol class="tl">${(c.events || []).map(e => { const d = EV[e.type] || EV.received; return `<li style="--c:var(${d.c})"><div class="h"><b>${esc(d.t(e))}</b><time>${fmt(e.at)}</time>${e.due ? `<span class="sub">기한 ${fmtDate(e.due)}</span>` : ''}</div>${e.text ? `<p>${esc(e.text)}</p>` : ''}${thumbsHTML(e.photos)}</li>`; }).join('')}</ol>
   </div>
   ${S.role === 'manager' ? managerActions(c) : staffActions(c, mine)}`;
 }
@@ -546,6 +664,7 @@ function staffActions(c, mine){
   return `<div class="act"><form id="f-report" class="sec">
     <h3>처리 결과 보고</h3>
     <label class="fld"><span>보고 내용</span><textarea id="rp-report" required placeholder="예) 1303호 욕실 배관 누수 확인. 배관 교체 완료, 1203호 천장 건조 후 도배는 세대에서 진행하기로 함"></textarea></label>
+    ${photoPicker('처리 전·후 사진')}
     <div class="btns"><button type="submit" class="btn" value="progress">진행 보고</button><button type="submit" class="btn primary" value="done">완료 보고</button></div>
     <p class="hint">진행 보고는 상태를 ‘처리중’으로, 완료 보고는 ‘처리완료’로 바꾸고 소장에게 회신 대기로 알립니다.</p>
   </form></div>`;
@@ -628,6 +747,14 @@ document.addEventListener('click', e => {
   else if(a === 'copy-reply'){ const t = document.getElementById('rp-text'); copyText(t.value, t); }
   else if(a === 'reset-reply'){ const c = find(S.selectedId); if(c) document.getElementById('rp-text').value = replyTemplate(c); }
   else if(a === 'sync-now'){ pull(true); }
+  else if(a === 'photo-remove'){ const [p] = pendingPhotos.splice(+b.dataset.i, 1); if(p) URL.revokeObjectURL(p.url); renderDetail(); }
+  else if(a === 'photo-view'){
+    const v = $('#viewer'), img = $('#viewer-img');
+    img.removeAttribute('src');
+    photoURL(b.dataset.ref).then(u => { img.src = u; $('#viewer-dl').href = u; }).catch(() => toast('사진을 불러오지 못했습니다'));
+    v.showModal();
+  }
+  else if(a === 'viewer-close'){ $('#viewer').close(); }
   else if(a === 'gh-disconnect'){
     if(!confirm('이 기기의 서버 연결을 끊을까요? 서버 데이터는 그대로 남고, 이 기기에는 마지막으로 받은 내용이 남습니다.')) return;
     disconnectGitHub(); toast('연결을 끊었습니다'); resetDetail();
@@ -656,6 +783,18 @@ document.addEventListener('input', e => {
   if(e.target.id === 'q'){ S.q = e.target.value; renderList(); }
 });
 document.addEventListener('change', async e => {
+  if(e.target.id === 'photo-input' && e.target.files.length){
+    const files = [...e.target.files].slice(0, PHOTO_LIMIT - pendingPhotos.length);
+    toast('사진 준비 중…');
+    for(const file of files){
+      try { const blob = await compressPhoto(file); pendingPhotos.push({blob, url:URL.createObjectURL(blob)}); }
+      catch(err){ toast('사진 하나를 읽지 못했습니다 (' + file.name + ')'); }
+    }
+    if(e.target.files.length > files.length) toast(`사진은 한 번에 ${PHOTO_LIMIT}장까지 올릴 수 있습니다`);
+    else toast(`사진 ${files.length}장을 붙였습니다`);
+    renderDetail();
+    return;
+  }
   if(e.target.id === 'logo-file' && e.target.files[0]){
     try { const data = await readImage(e.target.files[0], 400); if(!lsSet(LOGO_KEY, data)) throw 0; S.logo = data; toast('로고를 바꿨습니다'); resetDetail(); }
     catch(err){ toast('이미지를 읽지 못했습니다'); }
@@ -692,7 +831,12 @@ document.addEventListener('submit', e => {
     }
     const msg = !byStaff ? '민원을 접수했습니다. 담당 직원에게 지시하세요.'
       : self ? '접수했습니다. 처리 후 보고를 올려 주세요.' : '접수했습니다. 소장님께 지시 대기로 전달됩니다.';
-    run(f, async () => { const id = await store.addComplaint(data); S.selectedId = id; S.panel = null; S.filter = 'open'; }, msg);
+    run(f, async () => {
+      const id = uid();
+      const photos = await uploadPending(id);
+      if(photos.length) data.events[0].photos = photos;
+      await store.addComplaint(data, id); S.selectedId = id; S.panel = null; S.filter = 'open';
+    }, msg);
   }
   else if(f.id === 'f-assign' && c){
     const sid = val('as-staff'); if(!sid){ toast('담당 직원을 선택하세요'); return; }
@@ -716,7 +860,7 @@ document.addEventListener('submit', e => {
     const kind = (e.submitter && e.submitter.value) || 'progress', text = val('rp-report');
     const patch = { status:kind };
     if(kind === 'done') patch.rework = false;
-    run(f, () => store.update(c.id, patch, event(kind, {staffId:S.me, text}), `${kind === 'done' ? '완료 보고' : '진행 보고'}: ${c.location} (${staffName(S.me)})`), kind === 'done' ? '완료 보고를 올렸습니다' : '진행 보고를 올렸습니다');
+    run(f, async () => store.update(c.id, patch, event(kind, Object.assign({staffId:S.me, text}, await uploadPending(c.id).then(p => p.length ? {photos:p} : {}))), `${kind === 'done' ? '완료 보고' : '진행 보고'}: ${c.location} (${staffName(S.me)})`), kind === 'done' ? '완료 보고를 올렸습니다' : '진행 보고를 올렸습니다');
   }
   else if(f.id === 'f-gh'){
     const repo = val('gh-repo').replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, ''), token = val('gh-token');
