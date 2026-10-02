@@ -25,37 +25,203 @@ const CATS = ['시설','전기','설비(급배수)','승강기','소음·층간'
 const CHANNELS = ['전화','방문','문자','인터폰','게시판'];
 const METHODS = ['문자','카톡','전화','방문'];
 
-/* ---------- 저장소: 이 기기 브라우저(localStorage) ---------- */
+/* ---------- 저장소 ----------
+ * 기본: 이 기기 브라우저(localStorage)
+ * GitHub 연결 시: 비공개 저장소의 data.json 하나를 모든 기기가 같이 읽고 쓴다.
+ * 쓰기는 "바꿀 내용(함수)"을 최신 데이터에 적용해 커밋하고, 그사이 다른 기기가 먼저
+ * 저장했으면(sha 불일치) 최신본을 다시 받아 같은 변경을 다시 적용한다. */
 const KEY = 'sunmin.minwon.v1';
-const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:'', logo:''};
+const GH_KEY = 'sunmin.minwon.github';
+const LOGO_KEY = 'sunmin.minwon.logo';
+const DATA_PATH = 'data.json';
+const POLL_MS = 20000;
+const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:''};
 
 const S = {
   role: lsGet('role') || 'manager', filter:'open', q:'', selectedId:null, panel:null,
-  me: lsGet('meStaff'), complaints:[], staff:[], settings:Object.assign({}, DEFAULT_SETTINGS)
+  me: lsGet('meStaff'), complaints:[], staff:[], settings:Object.assign({}, DEFAULT_SETTINGS),
+  logo: lsGet(LOGO_KEY) || '',
+  sync:{mode:'local', state:'', at:null, msg:''}
 };
 
-function loadData(){
-  try {
-    const d = JSON.parse(lsGet(KEY) || 'null');
-    if(d){
-      S.complaints = d.complaints || [];
-      S.staff = d.staff || [];
-      S.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings);
-    }
-  } catch(e){ console.error(e); }
+function emptyData(){ return {complaints:[], staff:[], settings:Object.assign({}, DEFAULT_SETTINGS)}; }
+function snapshot(){ return {complaints:S.complaints, staff:S.staff, settings:S.settings}; }
+function applyData(d){
+  d = d || emptyData();
+  S.complaints = d.complaints || [];
+  S.staff = d.staff || [];
+  S.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings);
+  delete S.settings.logo;
 }
-function persist(){
-  const ok = lsSet(KEY, JSON.stringify({complaints:S.complaints, staff:S.staff, settings:S.settings}));
-  if(!ok) throw {code:'quota_exceeded'};
+function loadLocal(){
+  try { applyData(JSON.parse(lsGet(KEY) || 'null')); } catch(e){ console.error(e); }
+}
+function saveLocal(d){
+  if(!lsSet(KEY, JSON.stringify(d))) throw {code:'quota_exceeded'};
+}
+
+/* GitHub Contents API */
+const gh = {
+  cfg:null, sha:null, etag:null, timer:null,
+  load(){ try { this.cfg = JSON.parse(lsGet(GH_KEY) || 'null'); } catch(e){ this.cfg = null; } return this.cfg; },
+  url(){ return `https://api.github.com/repos/${this.cfg.repo}/contents/${DATA_PATH}`; },
+  headers(extra){ return Object.assign({'Authorization':`Bearer ${this.cfg.token}`, 'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28'}, extra); },
+  async fetchData(force){
+    const h = this.headers(!force && this.etag ? {'If-None-Match':this.etag} : {});
+    const r = await fetch(this.url() + '?t=' + Date.now(), {headers:h, cache:'no-store'});
+    if(r.status === 304) return {changed:false};
+    if(r.status === 404){ this.sha = null; this.etag = null; return {changed:true, data:null, missing:true}; }
+    if(!r.ok) throw ghError(r.status, await r.text());
+    this.etag = r.headers.get('ETag');
+    const meta = await r.json();
+    let b64 = meta.content;
+    if(!b64 || meta.encoding === 'none'){
+      // 1MB가 넘으면 Contents API가 본문을 주지 않으므로 blob으로 받는다
+      const br = await fetch(`https://api.github.com/repos/${this.cfg.repo}/git/blobs/${meta.sha}`, {headers:this.headers(), cache:'no-store'});
+      if(!br.ok) throw ghError(br.status, await br.text());
+      b64 = (await br.json()).content;
+    }
+    this.sha = meta.sha;
+    return {changed:true, data:JSON.parse(b64dec(b64))};
+  },
+  async put(data, message){
+    const body = {message, content:b64enc(JSON.stringify(data, null, 1))};
+    if(this.sha) body.sha = this.sha;
+    const r = await fetch(this.url(), {method:'PUT', headers:this.headers({'Content-Type':'application/json'}), body:JSON.stringify(body)});
+    if(r.status === 409 || r.status === 422) return false;  // 다른 기기가 먼저 저장함
+    if(!r.ok) throw ghError(r.status, await r.text());
+    const j = await r.json();
+    this.sha = j.content.sha;
+    this.etag = null;
+    return true;
+  }
+};
+function ghError(status, text){
+  const e = new Error(text); e.status = status;
+  e.code = status === 401 ? 'gh_auth' : status === 403 ? 'gh_forbidden' : status === 404 ? 'gh_notfound' : 'gh_other';
+  return e;
+}
+function b64enc(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = ''; for(let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function b64dec(b64){
+  const bin = atob(b64.replace(/\s/g, ''));
+  const bytes = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+const clone = o => JSON.parse(JSON.stringify(o));
+
+function renderSync(){
+  const el = $('#sync'); if(!el) return;
+  el.hidden = S.sync.mode !== 'github';
+  el.className = 'sync ' + (S.sync.state || '');
+  const t = S.sync.at ? `${p2(S.sync.at.getHours())}:${p2(S.sync.at.getMinutes())}` : '';
+  el.textContent = S.sync.state === 'saving' ? (S.sync.msg || '저장 중…') : S.sync.state === 'error' ? `연결 오류: ${S.sync.msg}` : `동기화됨 ${t}`;
+  el.title = '누르면 지금 바로 새로 고칩니다';
+}
+function setSync(state, msg){ S.sync.state = state; S.sync.msg = msg || ''; if(state === 'ok') S.sync.at = new Date(); renderSync(); }
+
+/* 모든 변경은 commit(설명, 변경함수)로. 변경함수는 데이터 사본 d를 고친다. */
+let queue = Promise.resolve(), committing = 0;
+function commit(message, mutate){
+  committing++;
+  const job = queue.then(async () => {
+    if(S.sync.mode !== 'github'){
+      const d = clone(snapshot()); const ret = mutate(d); saveLocal(d); applyData(d); return ret;
+    }
+    setSync('saving');
+    for(let attempt = 0; attempt < 5; attempt++){
+      if(attempt > 0){ const f = await gh.fetchData(true); applyData(f.data); }
+      const d = clone(snapshot());
+      const ret = mutate(d);
+      if(await gh.put(d, message)){
+        applyData(d); saveLocal(d); setSync('ok'); return ret;
+      }
+    }
+    throw {code:'gh_conflict'};
+  });
+  queue = job.catch(() => {});
+  job.then(() => committing--, () => committing--);
+  return job;
+}
+
+async function pull(force){
+  if(S.sync.mode !== 'github' || committing) return;
+  try {
+    const f = await gh.fetchData(force);
+    if(f.changed){ applyData(f.data); saveLocal(snapshot()); render(); }
+    setSync('ok');
+  } catch(e){
+    console.error(e);
+    setSync('error', syncErrMsg(e));
+  }
+}
+function syncErrMsg(e){
+  if(e && e.code === 'gh_auth') return '토큰이 틀렸거나 만료되었습니다';
+  if(e && e.code === 'gh_forbidden') return '토큰 권한이 부족합니다(Contents 읽기·쓰기)';
+  if(e && e.code === 'gh_notfound') return '저장소를 찾을 수 없습니다';
+  if(!navigator.onLine) return '인터넷 연결 없음';
+  return '서버 연결 오류';
+}
+function startPolling(){
+  clearInterval(gh.timer);
+  gh.timer = setInterval(() => { if(document.visibilityState === 'visible') pull(); }, POLL_MS);
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') pull(); });
+window.addEventListener('online', () => pull());
+
+async function connectGitHub(repo, token){
+  gh.cfg = {repo, token}; gh.sha = null; gh.etag = null;
+  const f = await gh.fetchData(true);       // 실패하면 여기서 오류
+  lsSet(GH_KEY, JSON.stringify(gh.cfg));
+  S.sync.mode = 'github';
+  const local = snapshot();
+  const localHas = local.complaints.length || local.staff.length;
+  if(f.missing || !f.data){
+    // 서버가 비어 있으면 이 기기 데이터를 처음 데이터로 올린다
+    await gh.put(localHas ? local : emptyData(), '민원 처리부 데이터 시작');
+    if(!localHas) applyData(emptyData());
+  } else {
+    const remoteHas = (f.data.complaints || []).length || (f.data.staff || []).length;
+    if(localHas && !remoteHas && confirm('서버 데이터가 비어 있습니다. 이 기기에 있던 민원·직원 기록을 서버로 올릴까요?')){
+      if(!await gh.put(local, '이 기기 데이터 올리기')) throw {code:'gh_conflict'};
+    } else {
+      applyData(f.data);
+    }
+  }
+  saveLocal(snapshot());
+  setSync('ok');
+  startPolling();
+}
+function disconnectGitHub(){
+  clearInterval(gh.timer);
+  try { localStorage.removeItem(GH_KEY); } catch(e){}
+  gh.cfg = null; gh.sha = null; gh.etag = null;
+  S.sync = {mode:'local', state:'', at:null, msg:''};
+  renderSync();
 }
 
 const store = {
-  async addComplaint(data){ const id = uid(); S.complaints.unshift(Object.assign({id}, data)); persist(); return id; },
-  async update(id, patch){ Object.assign(find(id), patch); persist(); },
-  async remove(id){ S.complaints = S.complaints.filter(c => c.id !== id); persist(); },
-  async addStaff(data){ S.staff.push(Object.assign({id:uid()}, data)); persist(); },
-  async removeStaff(id){ S.staff = S.staff.filter(s => s.id !== id); persist(); },
-  async saveSettings(data){ Object.assign(S.settings, data); persist(); }
+  addComplaint(data){
+    const id = uid();
+    return commit(`민원 접수: ${data.location} ${data.title}`, d => { d.complaints.unshift(Object.assign({id}, data)); return id; });
+  },
+  /* patch는 덮어쓸 값, ev는 처리 내역에 덧붙일 기록 */
+  update(id, patch, ev, message){
+    return commit(message || '민원 처리', d => {
+      const c = d.complaints.find(x => x.id === id);
+      if(!c) throw {code:'gone'};
+      Object.assign(c, patch, {updatedAt:now()});
+      if(ev) c.events = [...(c.events || []), ev];
+    });
+  },
+  remove(id){ return commit('민원 삭제', d => { d.complaints = d.complaints.filter(c => c.id !== id); }); },
+  addStaff(data){ return commit(`직원 추가: ${data.name}`, d => { d.staff.push(Object.assign({id:uid()}, data)); }); },
+  removeStaff(id){ return commit('직원 삭제', d => { d.staff = d.staff.filter(s => s.id !== id); }); },
+  saveSettings(data){ return commit('설정 변경', d => { d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings, data); }); },
+  replaceAll(data){ return commit('백업 불러오기', d => { d.complaints = data.complaints || []; d.staff = data.staff || []; d.settings = Object.assign({}, DEFAULT_SETTINGS, data.settings); }); }
 };
 const find = id => S.complaints.find(c => c.id === id);
 const staffName = id => { const s = S.staff.find(x => x.id === id); return s ? s.name : (id ? '(명단에서 삭제된 직원)' : '미배정'); };
@@ -84,7 +250,7 @@ function filtered(){
 function renderBrand(){
   const s = S.settings;
   const img = $('#logo'), mark = $('#logo-mark');
-  const src = s.logo || 'logo.png';
+  const src = S.logo || 'logo.png';
   if(img.dataset.src !== src){
     img.dataset.src = src;
     img.onload = () => { img.hidden = false; mark.hidden = true; };
@@ -217,11 +383,11 @@ function settingsView(){
   <div class="sec act">
     <h3>로고</h3>
     <div class="logo-preview">
-      ${s.logo ? `<img src="${esc(s.logo)}" alt="현재 로고">` : '<span class="hint">이 기기에 올린 로고가 없습니다. 저장소의 <b>logo.png</b>가 있으면 그것을 씁니다.</span>'}
+      ${S.logo ? `<img src="${esc(S.logo)}" alt="현재 로고">` : '<span class="hint">이 기기에 올린 로고가 없습니다. 저장소의 <b>logo.png</b>가 있으면 그것을 씁니다.</span>'}
     </div>
     <div class="btns">
       <label class="btn">로고 이미지 올리기<input type="file" id="logo-file" accept="image/*" hidden></label>
-      ${s.logo ? '<button type="button" class="btn danger" data-act="logo-clear">이 기기 로고 지우기</button>' : ''}
+      ${S.logo ? '<button type="button" class="btn danger" data-act="logo-clear">이 기기 로고 지우기</button>' : ''}
     </div>
   </div>
   <div class="sec act">
@@ -233,6 +399,7 @@ function settingsView(){
       <div class="btns" style="align-self:end"><button type="submit" class="btn">직원 추가</button></div>
     </form>
   </div>
+  ${githubSection()}
   <div class="sec act">
     <h3>데이터 백업</h3>
     <p class="hint">민원 기록은 이 기기의 브라우저에 저장됩니다. 브라우저 기록을 지우면 함께 지워지니 정기적으로 백업 파일을 받아 두세요. 다른 PC로 옮길 때도 백업 파일을 불러오면 됩니다.</p>
@@ -242,6 +409,32 @@ function settingsView(){
     </div>
   </div>
   <div class="btns"><button type="button" class="btn" data-act="cancel">닫기</button></div>`;
+}
+
+function githubSection(){
+  if(S.sync.mode === 'github' && gh.cfg){
+    return `<div class="sec act">
+      <h3>여러 기기 같이 쓰기 (GitHub)</h3>
+      <div class="conn"><span>연결된 저장소 <code>${esc(gh.cfg.repo)}</code></span><span class="hint">${S.sync.state === 'error' ? '연결 오류: ' + esc(S.sync.msg) : '모든 기기가 이 저장소의 data.json을 같이 씁니다. 20초마다 새 내용을 받아옵니다.'}</span></div>
+      <p class="hint">직원 휴대폰에서 아래 링크를 한 번 열면 자동으로 연결됩니다. 링크에 접속 토큰이 들어 있으니 직원에게만 개별로 보내세요.</p>
+      <div class="btns">
+        <button type="button" class="btn" data-act="gh-link" data-role="staff">직원용 연결 링크 복사</button>
+        <button type="button" class="btn" data-act="gh-link" data-role="manager">관리소장용 링크 복사</button>
+        <button type="button" class="btn" data-act="sync-now">지금 새로 고침</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn danger" data-act="gh-disconnect">이 기기 연결 끊기</button>
+      </div>
+    </div>`;
+  }
+  return `<form id="f-gh" class="sec act">
+    <h3>여러 기기 같이 쓰기 (GitHub)</h3>
+    <p class="hint">지금은 이 기기에만 저장됩니다. 비공개 GitHub 저장소와 토큰을 넣으면 소장님 PC와 직원 휴대폰이 같은 민원 기록을 함께 씁니다. 처음 연결할 때 이 기기 기록을 서버로 올릴 수 있습니다.</p>
+    <div class="grid2">
+      <label class="fld"><span>데이터 저장소 (비공개)</span><input type="text" id="gh-repo" placeholder="airrotc29/minwon-data" required autocomplete="off"></label>
+      <label class="fld"><span>토큰</span><input type="password" id="gh-token" placeholder="github_pat_…" required autocomplete="off"></label>
+    </div>
+    <div class="btns"><button type="submit" class="btn primary">연결</button></div>
+  </form>`;
 }
 
 const EV = {
@@ -369,13 +562,17 @@ let toastT;
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2600); }
 function failMsg(e){
   if(e && e.code === 'quota_exceeded') return '저장 공간이 가득 찼습니다. 백업 후 오래된 민원을 삭제하거나 로고 이미지를 작게 줄이세요.';
+  if(e && e.code === 'gone') return '다른 기기에서 삭제된 민원입니다.';
+  if(e && e.code === 'gh_conflict') return '다른 기기와 동시에 저장이 겹쳤습니다. 잠시 후 다시 시도하세요.';
+  if(e && String(e.code).startsWith('gh_')) return '서버(GitHub)에 저장하지 못했습니다: ' + syncErrMsg(e);
+  if(e instanceof TypeError) return '인터넷 연결을 확인하세요. 저장되지 않았습니다.';
   return '저장하지 못했습니다. 잠시 후 다시 시도하세요.';
 }
 async function run(form, fn, okMsg){
   const btns = form ? form.querySelectorAll('button') : [];
   btns.forEach(b => b.disabled = true);
   try { await fn(); toast(okMsg); resetDetail(); }
-  catch(e){ console.error(e); loadData(); toast(failMsg(e)); render(); }
+  catch(e){ console.error(e); if(S.sync.mode === 'github' && e && String(e.code).startsWith('gh_')) setSync('error', syncErrMsg(e)); toast(failMsg(e)); render(); }
   finally { btns.forEach(b => b.disabled = false); }
 }
 async function copyText(text, fallbackEl){
@@ -424,10 +621,19 @@ document.addEventListener('click', e => {
     location.href = `sms:${tel}${sep}body=${encodeURIComponent(val('rp-text'))}`;
   }
   else if(a === 'reset-reply'){ const c = find(S.selectedId); if(c) document.getElementById('rp-text').value = replyTemplate(c); }
+  else if(a === 'sync-now'){ pull(true); }
+  else if(a === 'gh-disconnect'){
+    if(!confirm('이 기기의 서버 연결을 끊을까요? 서버 데이터는 그대로 남고, 이 기기에는 마지막으로 받은 내용이 남습니다.')) return;
+    disconnectGitHub(); toast('연결을 끊었습니다'); resetDetail();
+  }
+  else if(a === 'gh-link'){
+    const payload = encodeURIComponent(b64enc(JSON.stringify({repo:gh.cfg.repo, token:gh.cfg.token, role:b.dataset.role})));
+    copyText(location.origin + location.pathname + '#connect=' + payload);
+  }
   else if(a === 'del-staff'){ run(null, () => store.removeStaff(b.dataset.id), '직원을 명단에서 뺐습니다'); }
-  else if(a === 'logo-clear'){ run(null, () => store.saveSettings({logo:''}), '이 기기 로고를 지웠습니다'); }
+  else if(a === 'logo-clear'){ try { localStorage.removeItem(LOGO_KEY); } catch(e){} S.logo = ''; toast('이 기기 로고를 지웠습니다'); resetDetail(); }
   else if(a === 'export'){
-    const blob = new Blob([JSON.stringify({complaints:S.complaints, staff:S.staff, settings:S.settings}, null, 2)], {type:'application/json'});
+    const blob = new Blob([JSON.stringify(snapshot(), null, 2)], {type:'application/json'});
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `민원백업_${ymd(new Date())}.json`;
@@ -445,7 +651,7 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   if(e.target.id === 'logo-file' && e.target.files[0]){
-    try { const data = await readImage(e.target.files[0], 400); run(null, () => store.saveSettings({logo:data}), '로고를 바꿨습니다'); }
+    try { const data = await readImage(e.target.files[0], 400); if(!lsSet(LOGO_KEY, data)) throw 0; S.logo = data; toast('로고를 바꿨습니다'); resetDetail(); }
     catch(err){ toast('이미지를 읽지 못했습니다'); }
   }
   if(e.target.id === 'import-file' && e.target.files[0]){
@@ -453,8 +659,8 @@ document.addEventListener('change', async e => {
       const d = JSON.parse(await e.target.files[0].text());
       if(!Array.isArray(d.complaints)) throw new Error('형식');
       if(!confirm(`민원 ${d.complaints.length}건이 든 백업으로 지금 데이터를 바꿀까요?`)) return;
-      S.complaints = d.complaints; S.staff = d.staff || []; S.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings);
-      persist(); S.selectedId = null; toast('백업을 불러왔습니다'); resetDetail();
+      S.selectedId = null;
+      run(null, () => store.replaceAll(d), '백업을 불러왔습니다');
     } catch(err){ toast('백업 파일을 읽지 못했습니다'); }
     finally { e.target.value = ''; }
   }
@@ -477,25 +683,33 @@ document.addEventListener('submit', e => {
     const text = val('as-text'), due = val('as-due');
     const type = c.assignee ? 'reassigned' : 'assigned';
     const keep = c.status === 'progress' && c.assignee === sid;
-    run(f, () => store.update(c.id, { assignee:sid, instruction:text, due, status: keep ? 'progress' : 'assigned', updatedAt:now(),
-      events:[...(c.events || []), event(type, {staffId:sid, text, due})] }), `${staffName(sid)}에게 지시했습니다`);
+    run(f, () => store.update(c.id, { assignee:sid, instruction:text, due, status: keep ? 'progress' : 'assigned', rework:false },
+      event(type, {staffId:sid, text, due}), `지시: ${c.location} → ${staffName(sid)}`), `${staffName(sid)}에게 지시했습니다`);
   }
   else if(f.id === 'f-redo' && c){
     const text = val('rw-text'), due = val('rw-due') || c.due;
-    run(f, () => store.update(c.id, { instruction:text, due, status:'assigned', rework:true, updatedAt:now(),
-      events:[...(c.events || []), event('rework', {staffId:c.assignee, text, due})] }), '재작업을 지시했습니다');
+    run(f, () => store.update(c.id, { instruction:text, due, status:'assigned', rework:true },
+      event('rework', {staffId:c.assignee, text, due}), `재작업 지시: ${c.location}`), '재작업을 지시했습니다');
   }
   else if(f.id === 'f-reply' && c){
     const final = f.dataset.final === 'true', text = val('rp-text'), method = val('rp-method');
-    const patch = { updatedAt:now(), events:[...(c.events || []), event(final ? 'replied' : 'notice', {text, method})] };
-    if(final){ patch.status = 'replied'; patch.repliedAt = now(); }
-    run(f, () => store.update(c.id, patch), final ? '회신완료로 기록했습니다' : '중간 안내를 기록했습니다');
+    const patch = final ? {status:'replied', repliedAt:now()} : {};
+    run(f, () => store.update(c.id, patch, event(final ? 'replied' : 'notice', {text, method}), `${final ? '회신 완료' : '중간 안내'}: ${c.location}`), final ? '회신완료로 기록했습니다' : '중간 안내를 기록했습니다');
   }
   else if(f.id === 'f-report' && c){
     const kind = (e.submitter && e.submitter.value) || 'progress', text = val('rp-report');
-    const patch = { status:kind, updatedAt:now(), events:[...(c.events || []), event(kind, {staffId:S.me, text})] };
+    const patch = { status:kind };
     if(kind === 'done') patch.rework = false;
-    run(f, () => store.update(c.id, patch), kind === 'done' ? '완료 보고를 올렸습니다' : '진행 보고를 올렸습니다');
+    run(f, () => store.update(c.id, patch, event(kind, {staffId:S.me, text}), `${kind === 'done' ? '완료 보고' : '진행 보고'}: ${c.location} (${staffName(S.me)})`), kind === 'done' ? '완료 보고를 올렸습니다' : '진행 보고를 올렸습니다');
+  }
+  else if(f.id === 'f-gh'){
+    const repo = val('gh-repo').replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, ''), token = val('gh-token');
+    if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){ toast('저장소는 "계정/저장소이름" 형식으로 넣으세요'); return; }
+    const btns = f.querySelectorAll('button'); btns.forEach(x => x.disabled = true);
+    connectGitHub(repo, token)
+      .then(() => { toast('연결했습니다. 이제 다른 기기와 함께 씁니다.'); resetDetail(); })
+      .catch(err => { console.error(err); gh.cfg = null; S.sync.mode = 'local'; renderSync(); toast('연결 실패: ' + syncErrMsg(err)); })
+      .finally(() => btns.forEach(x => x.disabled = false));
   }
   else if(f.id === 'f-settings'){
     run(f, () => store.saveSettings({company:val('s-co') || COMPANY, buildingName:val('s-bname'), officePhone:val('s-tel')}), '저장했습니다');
@@ -506,8 +720,26 @@ document.addEventListener('submit', e => {
 });
 
 /* 같은 PC에서 관리소장 창과 직원 창을 따로 열어도 서로 반영 */
-window.addEventListener('storage', e => { if(e.key === KEY){ loadData(); render(); } });
+window.addEventListener('storage', e => { if(e.key === KEY && S.sync.mode === 'local'){ loadLocal(); render(); } });
 
-loadData();
-render();
+/* 직원 연결 링크(#connect=...)로 열면 자동 연결 */
+async function boot(){
+  loadLocal();
+  const m = location.hash.match(/^#connect=(.+)$/);
+  if(m){
+    history.replaceState(null, '', location.pathname + location.search);
+    try {
+      const c = JSON.parse(b64dec(decodeURIComponent(m[1])));
+      if(c.repo && c.token){ lsSet(GH_KEY, JSON.stringify({repo:c.repo, token:c.token})); if(c.role) { S.role = c.role; lsSet('role', c.role); } }
+    } catch(e){ toast('연결 링크가 올바르지 않습니다'); }
+  }
+  render();
+  if(gh.load()){
+    S.sync.mode = 'github';
+    setSync('saving', '불러오는 중');
+    await pull(true);
+    startPolling();
+  }
+}
+boot();
 })();
