@@ -108,9 +108,9 @@ function sbErr(error){
 async function q(promise){ const {data, error} = await promise; if(error) throw sbErr(error); return data; }
 
 async function fetchAll(table){
-  const rows = [];
+  const rows = [], key = table === 'app_users' ? 'email' : 'id';
   for(let from = 0; ; from += 1000){
-    const data = await q(sb.from(table).select('*').order('id').range(from, from + 999));
+    const data = await q(sb.from(table).select('*').order(key).range(from, from + 999));
     rows.push(...data);
     if(data.length < 1000) return rows;
   }
@@ -145,7 +145,7 @@ function reload(){
       render();
     } catch(err){
       console.error(err);
-      setSync('error', err.code === 'auth' ? '로그인이 필요합니다' : '서버에 연결하지 못했습니다');
+      setSync('error', err.code === 'auth' ? '로그인이 필요합니다' : err.code === 'network' ? '인터넷 연결 없음' : '불러오기 실패: ' + err.message.slice(0, 80));
     } finally { loading = null; }
   })();
   return loading;
