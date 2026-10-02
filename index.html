@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#24584A">
+  <title>선민종합관리 민원 처리부</title>
+  <link rel="icon" href="logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <img class="logo" id="logo" alt="선민종합관리" hidden>
+      <span class="logo-mark" id="logo-mark" aria-hidden="true">선민</span>
+      <div class="brand-text">
+        <span class="co" id="co-name">선민종합관리</span>
+        <h1>민원 처리부</h1>
+        <small id="bname">접수 · 지시 · 보고 · 회신</small>
+      </div>
+    </div>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="화면 선택">
+        <button type="button" id="role-manager" data-act="role" data-role="manager" aria-pressed="true">관리소장</button>
+        <button type="button" id="role-staff" data-act="role" data-role="staff" aria-pressed="false">직원</button>
+      </div>
+      <span id="mgr-tools" class="tools">
+        <button type="button" class="btn" data-act="settings">직원·설정</button>
+        <button type="button" class="btn primary" data-act="new">+ 민원 접수</button>
+      </span>
+      <label class="picker" id="staff-picker" hidden>나는
+        <select id="me-select"></select>
+      </label>
+    </div>
+  </header>
+  <button type="button" class="alert" id="reply-alert" data-act="filter" data-f="done" hidden></button>
+  <nav class="summary" id="summary" aria-label="상태별 보기"></nav>
+  <main class="work">
+    <section class="panel list" id="list" aria-label="민원 목록"></section>
+    <section class="panel detail" id="detail" aria-live="polite"></section>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
