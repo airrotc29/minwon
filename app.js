@@ -477,6 +477,7 @@ function renderDetail(){
   openDet.forEach(id => { const d = document.getElementById(id); if(d) d.open = true; });
   if(focusId){ const f = document.getElementById(focusId); if(f) f.focus(); }
   hydratePhotos(el);
+  if(el.querySelector('#f-reply')){ const c = find(S.selectedId); if(c) prepareShareFiles(shareRefs(c)); }
   lastKey = key;
 }
 function resetDetail(){ lastKey = null; render(); }
@@ -681,9 +682,11 @@ function managerActions(c){
     html += `<${final ? 'div class="act"' : 'details class="more" id="dt-notice"'}>
       ${final ? '<h3>민원인에게 처리 결과 회신</h3>' : '<summary>민원인에게 중간 안내</summary>'}
       <form id="f-reply" class="sec" data-final="${final}">
-        <p class="hint">문구를 고친 뒤 복사해 보내거나 인터폰·방문으로 알리고, 알린 방법을 기록하세요.</p>
+        <p class="hint">문구를 고친 뒤 <b>카톡으로 보내기</b>(휴대폰) 또는 복사해 보내거나 인터폰·방문으로 알리고, 알린 방법을 기록하세요.</p>
         <textarea id="rp-text" rows="9">${esc(replyTemplate(c))}</textarea>
+        ${shareRefs(c).length ? `<label class="check"><input type="checkbox" id="rp-photos" checked> ${final ? '완료' : '진행'} 사진 ${shareRefs(c).length}장 함께 보내기</label>${thumbsHTML(shareRefs(c))}` : ''}
         <div class="btns">
+          <button type="button" class="btn kakao" data-act="share-kakao">카톡으로 보내기</button>
           <button type="button" class="btn" data-act="copy-reply">문구 복사</button>
           <button type="button" class="btn" data-act="reset-reply">기본 문구로</button>
           <span class="spacer"></span>
@@ -728,6 +731,46 @@ function staffActions(c, mine){
 }
 
 /* 민원인 안내 문구 자동 생성 */
+/* 회신에 함께 보낼 사진: 완료 회신이면 마지막 완료 보고, 중간 안내면 마지막 진행 보고의 사진 */
+function shareRefs(c){
+  const ev = lastEv(c, c.status === 'done' ? 'done' : 'progress');
+  return (ev && ev.photos) || [];
+}
+/* 휴대폰 공유창은 버튼을 누른 직후에만 열 수 있어, 사진 파일을 미리 준비해 둔다 */
+const shareFiles = new Map();
+function prepareShareFiles(refs){
+  refs.forEach(ref => {
+    if(shareFiles.has(ref)) return;
+    shareFiles.set(ref, null);
+    photoURL(ref).then(u => fetch(u)).then(r => r.blob())
+      .then(b => shareFiles.set(ref, new File([b], ref.split('/').pop(), {type:'image/jpeg'})))
+      .catch(() => shareFiles.delete(ref));
+  });
+}
+function shareKakao(){
+  const c = find(S.selectedId); if(!c) return;
+  const text = val('rp-text');
+  const withPhotos = document.getElementById('rp-photos') && document.getElementById('rp-photos').checked;
+  const files = withPhotos ? shareRefs(c).map(r => shareFiles.get(r)).filter(Boolean) : [];
+  if(navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+  const after = () => { const m = document.getElementById('rp-method'); if(m) m.value = '카톡'; };
+  if(!navigator.share){
+    after();
+    toast('문구를 복사했습니다. PC 카톡 대화창에 붙여넣기(Ctrl+V) 하세요. 사진은 크게 보기에서 저장해 보내세요.');
+    return;
+  }
+  const data = {text};
+  if(files.length && navigator.canShare && navigator.canShare({files})) data.files = files;
+  navigator.share(data).then(() => {
+    after();
+    toast(data.files ? '보냈으면 아래에서 기록 버튼을 누르세요. 카톡에 글이 빠졌으면 붙여넣기 하세요(문구 복사됨).' : '보냈으면 아래에서 기록 버튼을 누르세요.');
+  }).catch(err => {
+    if(err && err.name === 'AbortError') return;
+    after();
+    toast('공유창을 열지 못했습니다. 문구를 복사했으니 카톡에 붙여넣기 하세요.');
+  });
+}
+
 function replyTemplate(c){
   const s = S.settings;
   const head = [s.company || COMPANY, s.buildingName ? `${s.buildingName} 관리사무소` : '관리사무소'].join(' ');
@@ -802,6 +845,7 @@ document.addEventListener('click', e => {
   else if(a === 'settings'){ S.panel = 'settings'; render(); checkUsage(); $('#detail').scrollIntoView({block:'nearest'}); }
   else if(a === 'cancel'){ S.panel = null; render(); }
   else if(a === 'copy'){ copyText(b.dataset.text); }
+  else if(a === 'share-kakao'){ shareKakao(); }
   else if(a === 'copy-reply'){ const t = document.getElementById('rp-text'); copyText(t.value, t); }
   else if(a === 'reset-reply'){ const c = find(S.selectedId); if(c) document.getElementById('rp-text').value = replyTemplate(c); }
   else if(a === 'sync-now'){ pull(true); }

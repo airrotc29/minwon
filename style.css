@@ -164,3 +164,5 @@ input[type=password]{background:var(--surface);border:1px solid var(--line);bord
 .viewer img{display:block;max-width:100%;max-height:calc(94vh - 80px);margin:0 auto 10px;object-fit:contain}
 a.btn{text-decoration:none;color:inherit;display:inline-block}
 .notice{background:var(--accent-soft);border:1px solid var(--st-assigned);color:var(--ink);border-radius:var(--r);padding:10px 14px;font-size:14px;font-weight:500}
+.btn.kakao{background:#FEE500;border-color:#FEE500;color:#191919}
+.btn.kakao:hover{filter:brightness(.97);border-color:#FEE500}
