@@ -35,7 +35,7 @@ const GH_KEY = 'sunmin.minwon.github';
 const LOGO_KEY = 'sunmin.minwon.logo';
 const DATA_PATH = 'data.json';
 const POLL_MS = 20000;
-const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:''};
+const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:'', photoRepo:''};
 
 const S = {
   role: lsGet('role') || 'manager', filter:'open', q:'', selectedId:null, panel:null,
@@ -64,13 +64,18 @@ function saveLocal(d){
 const gh = {
   cfg:null, sha:null, etag:null, timer:null,
   load(){ try { this.cfg = JSON.parse(lsGet(GH_KEY) || 'null'); } catch(e){ this.cfg = null; } return this.cfg; },
-  url(path){ return `https://api.github.com/repos/${this.cfg.repo}/contents/${(path || DATA_PATH).split('/').map(encodeURIComponent).join('/')}`; },
-  async putFile(path, blob, message){
-    const r = await fetch(this.url(path), {method:'PUT', headers:this.headers({'Content-Type':'application/json'}), body:JSON.stringify({message, content:await blobToB64(blob)})});
+  url(path, repo){ return `https://api.github.com/repos/${repo || this.cfg.repo}/contents/${(path || DATA_PATH).split('/').map(encodeURIComponent).join('/')}`; },
+  async repoSizeKB(repo){
+    const r = await fetch(`https://api.github.com/repos/${repo}`, {headers:this.headers(), cache:'no-store'});
+    if(!r.ok) throw ghError(r.status, await r.text());
+    return (await r.json()).size;
+  },
+  async putFile(path, blob, message, repo){
+    const r = await fetch(this.url(path, repo), {method:'PUT', headers:this.headers({'Content-Type':'application/json'}), body:JSON.stringify({message, content:await blobToB64(blob)})});
     if(!r.ok) throw ghError(r.status, await r.text());
   },
-  async getRaw(path){
-    const r = await fetch(this.url(path), {headers:this.headers({'Accept':'application/vnd.github.raw'}), cache:'no-store'});
+  async getRaw(path, repo){
+    const r = await fetch(this.url(path, repo), {headers:this.headers({'Accept':'application/vnd.github.raw'}), cache:'no-store'});
     if(!r.ok) throw ghError(r.status, await r.text());
     return r.blob();
   },
@@ -217,7 +222,14 @@ function disconnectGitHub(){
  * 휴대폰 사진은 올리기 전에 줄인다(긴 변 1600px, JPEG).
  * GitHub 연결 시 비공개 저장소 photos/<민원ID>/ 에, 아니면 이 기기(IndexedDB)에 저장한다.
  * 처리 내역(event)에는 사진 위치만 photos:[...]로 남긴다. */
-const PHOTO_MAX = 1600, PHOTO_Q = 0.8, PHOTO_LIMIT = 6;
+const PHOTO_MAX = 1280, PHOTO_Q = 0.72, PHOTO_LIMIT = 6;
+const USAGE_WARN_KB = 4 * 1024 * 1024;   // 사진 저장소 4GB가 넘으면 새 저장소로 바꾸라고 안내
+/* 사진 위치: "photos/…"는 데이터 저장소, "계정/저장소:photos/…"는 따로 둔 사진 저장소 */
+function splitRef(ref){
+  const i = ref.indexOf(':photos/');
+  return i > 0 ? {repo:ref.slice(0, i), path:ref.slice(i + 1)} : {repo:null, path:ref};
+}
+const photoRepo = () => (S.settings.photoRepo || '').trim();
 let pendingPhotos = [];              // 아직 올리지 않은 선택 사진 {blob, url}
 const photoCache = new Map();        // 사진 위치 → 화면용 주소
 
@@ -263,7 +275,11 @@ const idb = {
 async function savePhoto(blob, cid){
   const name = `${ymd(new Date())}-${uid()}.jpg`;
   let ref;
-  if(S.sync.mode === 'github'){ ref = `photos/${cid}/${name}`; await gh.putFile(ref, blob, `사진 올리기: ${cid}`); }
+  if(S.sync.mode === 'github'){
+    const repo = photoRepo(), path = `photos/${cid}/${name}`;
+    await gh.putFile(path, blob, `사진 올리기: ${cid}`, repo || null);
+    ref = repo ? `${repo}:${path}` : path;
+  }
   else { ref = `local:${cid}/${name}`; await idb.put(ref, blob); }
   photoCache.set(ref, URL.createObjectURL(blob));
   return ref;
@@ -272,7 +288,7 @@ async function photoURL(ref){
   if(photoCache.has(ref)) return photoCache.get(ref);
   let blob;
   if(ref.startsWith('local:')) blob = await idb.get(ref);
-  else if(gh.cfg) blob = await gh.getRaw(ref);
+  else if(gh.cfg){ const {repo, path} = splitRef(ref); blob = await gh.getRaw(path, repo); }
   if(!blob) throw new Error('missing');
   const url = URL.createObjectURL(blob);
   photoCache.set(ref, url);
@@ -309,9 +325,9 @@ async function migrateLocalPhotos(d){
       if(!ref.startsWith('local:')) continue;
       const blob = await idb.get(ref).catch(() => null);
       if(!blob) continue;
-      const path = 'photos/' + ref.slice(6);
-      await gh.putFile(path, blob, `사진 올리기: ${c.id}`);
-      ev.photos[i] = path;
+      const path = 'photos/' + ref.slice(6), repo = (d.settings && d.settings.photoRepo || '').trim();
+      await gh.putFile(path, blob, `사진 올리기: ${c.id}`, repo || null);
+      ev.photos[i] = repo ? `${repo}:${path}` : path;
     }
   }
   return d;
@@ -391,6 +407,9 @@ function render(){
   const al = $('#reply-alert');
   al.hidden = !(S.role === 'manager' && waiting > 0);
   al.innerHTML = `<span>직원 완료 보고가 올라왔습니다. 민원인에게 결과를 알려 주세요.</span><span>회신 대기 <b>${waiting}</b>건 →</span>`;
+
+  const warn = S.role === 'manager' ? usageWarn() : '';
+  const nt = $('#notice'); nt.hidden = !warn; nt.textContent = warn;
 
   renderSummary(); renderList(); renderDetail();
 }
@@ -534,6 +553,24 @@ function settingsView(){
   <div class="btns"><button type="button" class="btn" data-act="cancel">닫기</button></div>`;
 }
 
+/* 사진 저장소 사용량 (GitHub가 알려주는 값이라 몇 시간 늦게 반영될 수 있다) */
+const usage = {};
+function fmtSize(kb){ return kb >= 1024 * 1024 ? (kb / 1024 / 1024).toFixed(2) + 'GB' : Math.round(kb / 1024) + 'MB'; }
+async function checkUsage(force){
+  if(S.sync.mode !== 'github' || !gh.cfg) return;
+  const repo = photoRepo() || gh.cfg.repo;
+  const u = usage[repo];
+  if(!force && u && Date.now() - u.at < 600000) return;
+  try { usage[repo] = {kb:await gh.repoSizeKB(repo), at:Date.now()}; }
+  catch(e){ usage[repo] = {err:true, at:Date.now()}; }
+  render();
+}
+function usageWarn(){
+  if(S.sync.mode !== 'github' || !gh.cfg) return '';
+  const repo = photoRepo() || gh.cfg.repo, u = usage[repo];
+  return u && u.kb >= USAGE_WARN_KB ? `사진 저장소(${repo})가 ${fmtSize(u.kb)}입니다. 직원·설정에서 새 사진 저장소로 바꿔 주세요.` : '';
+}
+
 function githubSection(){
   if(S.sync.mode === 'github' && gh.cfg){
     return `<div class="sec act">
@@ -547,7 +584,8 @@ function githubSection(){
         <span class="spacer"></span>
         <button type="button" class="btn danger" data-act="gh-disconnect">이 기기 연결 끊기</button>
       </div>
-    </div>`;
+    </div>
+    ${photoRepoSection()}`;
   }
   return `<form id="f-gh" class="sec act">
     <h3>여러 기기 같이 쓰기 (GitHub)</h3>
@@ -557,6 +595,21 @@ function githubSection(){
       <label class="fld"><span>토큰</span><input type="password" id="gh-token" placeholder="github_pat_…" required autocomplete="off"></label>
     </div>
     <div class="btns"><button type="submit" class="btn primary">연결</button></div>
+  </form>`;
+}
+
+function photoRepoSection(){
+  const cur = photoRepo() || gh.cfg.repo, u = usage[cur];
+  const used = !u ? '확인 중…' : u.err ? '확인 못 함(토큰에 이 저장소 권한이 있는지 확인)' : `${fmtSize(u.kb)} / 권장 5GB`;
+  const year = new Date().getFullYear(), owner = gh.cfg.repo.split('/')[0];
+  return `<form id="f-photo-repo" class="sec act">
+    <h3>사진 저장소</h3>
+    <div class="conn"><span>지금 사진 저장소 <code>${esc(cur)}</code></span><span>사용량 <b>${esc(used)}</b>${u && u.kb >= USAGE_WARN_KB ? ' <span class="tag">새 저장소로 바꿀 때입니다</span>' : ''}</span></div>
+    <p class="hint">사진은 용량이 커서 연도별로 따로 저장소를 두는 것이 좋습니다. 새 비공개 저장소(예: <code>${esc(owner)}/minwon-photos-${year}</code>)를 만들고 토큰 권한에 그 저장소를 추가한 뒤 여기서 바꾸세요. 바꾼 뒤에도 예전 사진은 원래 저장소에서 그대로 불러옵니다. 저장소 하나는 4~5GB 안쪽으로 쓰세요.</p>
+    <div class="grid2">
+      <label class="fld"><span>새 사진 저장소</span><input type="text" id="pr-repo" placeholder="${esc(owner)}/minwon-photos-${year}" autocomplete="off"></label>
+      <div class="btns" style="align-self:end"><button type="submit" class="btn">사진 저장소 바꾸기</button></div>
+    </div>
   </form>`;
 }
 
@@ -691,6 +744,7 @@ let toastT;
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2600); }
 function failMsg(e){
   if(e && e.code === 'quota_exceeded') return '저장 공간이 가득 찼습니다. 백업 후 오래된 민원을 삭제하거나 로고 이미지를 작게 줄이세요.';
+  if(e && e.code === 'photo_repo') return '그 저장소를 찾을 수 없습니다. 비공개 저장소를 만들고 토큰 권한에 추가했는지 확인하세요.';
   if(e && e.code === 'gone') return '다른 기기에서 삭제된 민원입니다.';
   if(e && e.code === 'gh_conflict') return '다른 기기와 동시에 저장이 겹쳤습니다. 잠시 후 다시 시도하세요.';
   if(e && String(e.code).startsWith('gh_')) return '서버(GitHub)에 저장하지 못했습니다: ' + syncErrMsg(e);
@@ -741,7 +795,7 @@ document.addEventListener('click', e => {
   else if(a === 'new'){
     if(S.role === 'staff' && !S.me){ toast('먼저 오른쪽 위에서 내 이름을 선택하세요'); $('#me-select').focus(); return; }
     S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
-  else if(a === 'settings'){ S.panel = 'settings'; render(); $('#detail').scrollIntoView({block:'nearest'}); }
+  else if(a === 'settings'){ S.panel = 'settings'; render(); checkUsage(); $('#detail').scrollIntoView({block:'nearest'}); }
   else if(a === 'cancel'){ S.panel = null; render(); }
   else if(a === 'copy'){ copyText(b.dataset.text); }
   else if(a === 'copy-reply'){ const t = document.getElementById('rp-text'); copyText(t.value, t); }
@@ -862,12 +916,21 @@ document.addEventListener('submit', e => {
     if(kind === 'done') patch.rework = false;
     run(f, async () => store.update(c.id, patch, event(kind, Object.assign({staffId:S.me, text}, await uploadPending(c.id).then(p => p.length ? {photos:p} : {}))), `${kind === 'done' ? '완료 보고' : '진행 보고'}: ${c.location} (${staffName(S.me)})`), kind === 'done' ? '완료 보고를 올렸습니다' : '진행 보고를 올렸습니다');
   }
+  else if(f.id === 'f-photo-repo'){
+    const repo = val('pr-repo').replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, '');
+    if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){ toast('저장소는 "계정/저장소이름" 형식으로 넣으세요'); return; }
+    run(f, async () => {
+      try { usage[repo] = {kb:await gh.repoSizeKB(repo), at:Date.now()}; }
+      catch(err){ throw {code:'photo_repo'}; }
+      await store.saveSettings({photoRepo: repo === gh.cfg.repo ? '' : repo});
+    }, `이제 새 사진은 ${repo}에 저장됩니다`);
+  }
   else if(f.id === 'f-gh'){
     const repo = val('gh-repo').replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, ''), token = val('gh-token');
     if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){ toast('저장소는 "계정/저장소이름" 형식으로 넣으세요'); return; }
     const btns = f.querySelectorAll('button'); btns.forEach(x => x.disabled = true);
     connectGitHub(repo, token)
-      .then(() => { toast('연결했습니다. 이제 다른 기기와 함께 씁니다.'); resetDetail(); })
+      .then(() => { toast('연결했습니다. 이제 다른 기기와 함께 씁니다.'); resetDetail(); checkUsage(true); })
       .catch(err => { console.error(err); gh.cfg = null; S.sync.mode = 'local'; renderSync(); toast('연결 실패: ' + syncErrMsg(err)); })
       .finally(() => btns.forEach(x => x.disabled = false));
   }
@@ -899,6 +962,7 @@ async function boot(){
     setSync('saving', '불러오는 중');
     await pull(true);
     startPolling();
+    if(S.role === 'manager') checkUsage();
   }
 }
 boot();

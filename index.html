@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <div class="app">
@@ -38,6 +38,7 @@
       <button type="button" class="btn primary" data-act="new">+ 민원 접수</button>
     </div>
   </header>
+  <div class="notice" id="notice" role="status" hidden></div>
   <button type="button" class="alert" id="reply-alert" data-act="filter" data-f="done" hidden></button>
   <nav class="summary" id="summary" aria-label="상태별 보기"></nav>
   <main class="work">
@@ -50,6 +51,6 @@
   <div class="btns"><a class="btn" id="viewer-dl" download="민원사진.jpg">사진 저장</a><span class="spacer"></span><button type="button" class="btn primary" data-act="viewer-close">닫기</button></div>
 </dialog>
 <div class="toast" id="toast" role="status" hidden></div>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
