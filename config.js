@@ -7,6 +7,6 @@
  * service_role / secret 키는 절대 넣지 마세요.
  * 두 값이 비어 있으면 서버 없이 이 기기에만 저장합니다. */
 window.MINWON_CONFIG = {
-  supabaseUrl: '',
+  supabaseUrl: 'https://yqmlesdwcuaqlqzrptpp.supabase.co',
   supabaseKey: ''
 };
