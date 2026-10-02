@@ -423,7 +423,6 @@ function renderSummary(){
   const keys = ['open', ...ORDER, 'all'];
   const searchVal = $('#q') ? $('#q').value : S.q;
   const hadFocus = document.activeElement && document.activeElement.id === 'q';
-  const scroll = $('#summary .chips') ? $('#summary .chips').scrollLeft : 0;
   $('#summary').innerHTML = '<div class="chips" role="group" aria-label="상태별 보기">' + keys.map(k => {
     const label = k === 'open' ? '미결' : k === 'all' ? '전체' : ST[k].chip;
     const dot = ST[k] ? `<i class="dot s-${k}"></i>` : '';
@@ -431,11 +430,6 @@ function renderSummary(){
     const attn = ((k === 'done' || k === 'received') && S.role === 'manager' && n > 0) ? ' attn' : '';
     return `<button type="button" class="chip${attn}${n ? '' : ' zero'}" data-act="filter" data-f="${k}" aria-pressed="${S.filter === k}">${dot}<span>${label}</span><b>${n}</b></button>`;
   }).join('') + `</div><input type="text" id="q" class="search" placeholder="검색: 동호수·내용·담당" value="${esc(searchVal)}" aria-label="민원 검색">`;
-  // 휴대폰에서 옆으로 넘긴 위치를 유지하고, 고른 칸이 화면 안에 보이게 한다
-  const chips = $('#summary .chips');
-  chips.scrollLeft = scroll;
-  const on = chips.querySelector('[aria-pressed="true"]');
-  if(on && (on.offsetLeft < chips.scrollLeft || on.offsetLeft + on.offsetWidth > chips.scrollLeft + chips.clientWidth)) chips.scrollLeft = on.offsetLeft - 16;
   if(hadFocus){ const q = $('#q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 }
 
