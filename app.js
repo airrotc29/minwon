@@ -35,7 +35,8 @@ const GH_KEY = 'sunmin.minwon.github';
 const LOGO_KEY = 'sunmin.minwon.logo';
 const DATA_PATH = 'data.json';
 const POLL_MS = 20000;
-const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:'', photoRepo:''};
+const DEFAULT_ORDER = '해당 호실 방문 및 처리 바랍니다';
+const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:'', photoRepo:'', defaultOrder:DEFAULT_ORDER};
 
 const S = {
   role: lsGet('role') || 'manager', filter:'open', q:'', selectedId:null, panel:null,
@@ -520,6 +521,9 @@ function settingsView(){
       <label class="fld"><span>단지·건물명</span><input type="text" id="s-bname" value="${esc(s.buildingName)}" placeholder="○○아파트"></label>
       <label class="fld"><span>관리사무소 연락처</span><input type="tel" id="s-tel" value="${esc(s.officePhone)}" placeholder="02-000-0000"></label>
     </div>
+    <label class="fld"><span>기본 지시 문구 (지시할 때 미리 채워짐)</span><input type="text" id="s-order" value="${esc(s.defaultOrder)}" placeholder="${DEFAULT_ORDER}"></label>
+    <div>
+    </div>
     <div class="btns"><button type="submit" class="btn primary">저장</button></div>
   </form>
   <div class="sec act">
@@ -663,7 +667,7 @@ function managerActions(c){
         <label class="fld"><span>담당 직원</span><select id="as-staff" required>${staffOpts(c.assignee)}</select></label>
         <label class="fld"><span>처리 기한</span><input type="date" id="as-due" value="${esc(c.due || defaultDue || '')}"></label>
       </div>
-      <label class="fld"><span>지시 사항</span><textarea id="as-text" required placeholder="예) 오늘 오후 세대 방문해 누수 위치 확인, 윗집 1303호 협조 요청 후 결과 보고"></textarea></label>
+      <label class="fld"><span>지시 사항</span><textarea id="as-text" required placeholder="예) 오늘 오후 세대 방문해 누수 위치 확인, 윗집 1303호 협조 요청 후 결과 보고">${esc(S.settings.defaultOrder || '')}</textarea></label>
       <div class="btns"><button type="submit" class="btn primary">지시 보내기</button></div>
     </form>`;
   if(c.status === 'received'){
@@ -935,7 +939,7 @@ document.addEventListener('submit', e => {
       .finally(() => btns.forEach(x => x.disabled = false));
   }
   else if(f.id === 'f-settings'){
-    run(f, () => store.saveSettings({company:val('s-co') || COMPANY, buildingName:val('s-bname'), officePhone:val('s-tel')}), '저장했습니다');
+    run(f, () => store.saveSettings({company:val('s-co') || COMPANY, buildingName:val('s-bname'), officePhone:val('s-tel'), defaultOrder:val('s-order')}), '저장했습니다');
   }
   else if(f.id === 'f-staff'){
     run(f, () => store.addStaff({name:val('st-name'), duty:val('st-duty'), createdAt:now()}), '직원을 추가했습니다');
