@@ -379,7 +379,7 @@ function renderBrand(){
 function applyAccount(){
   const email = (S.user && S.user.email || '').toLowerCase();
   S.canManage = !SERVER || S.isManager;
-  if(!S.canManage){ S.role = 'staff'; if(S.panel === 'settings') S.panel = null; }
+  if(!S.canManage){ S.role = 'staff'; if(S.panel === 'settings' || S.panel === 'report') S.panel = null; }
   const st = email && S.staff.find(x => (x.email || '').toLowerCase() === email);
   S.lockMe = !!st;
   if(st) S.me = st.id;
@@ -477,11 +477,15 @@ function renderDetail(){
     el.querySelectorAll('details[id]').forEach(d => { if(d.open) openDet.push(d.id); });
     if(el.contains(document.activeElement)) focusId = document.activeElement.id;
   }
-  el.innerHTML = S.panel === 'new' ? newForm() : S.panel === 'settings' ? settingsView() : complaintView();
+  el.innerHTML = S.panel === 'new' ? newForm() : S.panel === 'settings' ? settingsView() : S.panel === 'report' ? reportView() : complaintView();
   for(const id in saved){ const i = document.getElementById(id); if(!i) continue; if(i.type === 'checkbox') i.checked = saved[id]; else i.value = saved[id]; }
   openDet.forEach(id => { const d = document.getElementById(id); if(d) d.open = true; });
   if(focusId){ const f = document.getElementById(focusId); if(f) f.focus(); }
   hydratePhotos(el);
+  if(S.panel === 'report' && el.querySelector('#report-preview')){
+    // 다시 그려도 저장 안 한 의견이 미리보기에 남도록
+    $('#report-preview').innerHTML = reportHTML(S.reportMonth, currentReportMeta());
+  }
   if(el.querySelector('#f-reply')){ const c = find(S.selectedId); if(c) prepareShareFiles(shareRefs(c)); }
   lastKey = key;
 }
@@ -514,6 +518,171 @@ function newForm(){
     <p class="hint">공용부 민원은 동에 장소(예: 지하 2층 주차장)를 적고 호수는 비워 두세요.</p>
     <div class="btns"><button type="button" class="btn" data-act="cancel">취소</button><button type="submit" class="btn primary">접수하기</button></div>
   </form>`;
+}
+
+/* ---------- 월간 보고서(관리단 보고용, 관리소장 전용) ----------
+ * 한 달 동안 접수된 민원과 그 달에 회신까지 끝난 민원을 집계한다.
+ * '처리 완료'는 민원인 회신까지 마친 것(회신완료)을 기준으로 한다. */
+function prevMonth(){ const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}`; }
+function monthRange(ym){ const [y, m] = ym.split('-').map(Number); return [new Date(y, m - 1, 1), new Date(y, m, 1)]; }
+function monthLabel(ym){ const [y, m] = ym.split('-').map(Number); return `${y}년 ${m}월`; }
+const evDate = (c, type) => { const e = lastEv(c, type); return e ? new Date(e.at) : null; };
+const closedAt = c => evDate(c, 'replied');
+const days = (a, b) => (b - a) / 86400000;
+const pct = (a, b) => b ? Math.round(a / b * 1000) / 10 : null;
+const fmtDays = v => v == null ? '-' : `${Math.round(v * 10) / 10}일`;
+const fmtPct = v => v == null ? '-' : `${v}%`;
+
+function reportData(ym){
+  const [s, e] = monthRange(ym);
+  const inM = d => d && d >= s && d < e;
+  const closedBy = (c, t) => { const d = closedAt(c); return !!d && d < t; };
+  const recv = S.complaints.filter(c => inM(new Date(c.createdAt))).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  const closedInMonth = S.complaints.filter(c => inM(closedAt(c)));
+  const carried = S.complaints.filter(c => new Date(c.createdAt) < s && !closedBy(c, s));
+  const openEnd = S.complaints.filter(c => new Date(c.createdAt) < e && !closedBy(c, e));
+  const doneRecv = recv.filter(c => closedBy(c, e));
+  const avg = list => { const v = list.map(c => days(new Date(c.createdAt), closedAt(c))); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const withDue = recv.filter(c => c.due && lastEv(c, 'done'));
+  const onTime = withDue.filter(c => ymd(new Date(lastEv(c, 'done').at)) <= c.due).length;
+  const group = (list, key) => {
+    const m = new Map();
+    list.forEach(c => { const k = key(c); const g = m.get(k) || {key:k, total:0, done:0, open:0, list:[]}; g.total++; if(closedBy(c, e)) g.done++; else g.open++; g.list.push(c); m.set(k, g); });
+    return [...m.values()].sort((a, b) => b.total - a.total || String(a.key).localeCompare(String(b.key)));
+  };
+  const dongKey = c => c.dong ? (/^\d+$/.test(c.dong) ? `${c.dong}동` : c.dong) : (c.location || '-');
+  return {
+    ym, s, e, recv, closedInMonth, carried, openEnd, doneRecv,
+    urgent:recv.filter(c => c.urgent).length,
+    byStaffReceived:recv.filter(c => c.receivedBy && c.receivedBy !== 'manager').length,
+    avgDays:avg(doneRecv), rate:pct(doneRecv.length, recv.length),
+    dueTotal:withDue.length, onTime, dueRate:pct(onTime, withDue.length),
+    byCat:group(recv, c => c.category || '기타'),
+    byDong:group(recv, dongKey).slice(0, 10),
+    byStaff:group(recv.filter(c => c.assignee), c => staffName(c.assignee)).map(g => Object.assign(g, {avg:avg(g.list.filter(c => closedBy(c, e)))}))
+  };
+}
+function reportMeta(ym){
+  const s = S.settings, n = (s.reportNotes || {})[ym] || {};
+  return {
+    to:s.reportTo || (/관리단/.test(s.company || '') ? s.company : `${s.buildingName || ''} 관리단`.trim()),
+    from:s.reportFrom || `선민종합관리(주)${s.buildingName ? ' ' + s.buildingName : ''} 관리사무소`,
+    note:n.note || '', plan:n.plan || ''
+  };
+}
+function bar(v, max){ return `<span class="rbar"><i style="width:${max ? Math.round(v / max * 100) : 0}%"></i></span>`; }
+function reportHTML(ym, meta){
+  const d = reportData(ym), nums = numbers();
+  const max = Math.max(1, ...d.byCat.map(g => g.total));
+  const stLabel = c => ST[c.status] ? ST[c.status].label : c.status;
+  const doneText = c => { const ev = lastEv(c, 'done'); return ev ? ev.text : ''; };
+  const table = (head, rows, empty) => rows.length
+    ? `<table class="rtable"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`
+    : `<p class="rempty">${empty}</p>`;
+  return `<article class="report">
+    <header class="r-head">
+      <div class="r-brand"><svg viewBox="0 0 96 96" width="34" height="34" aria-hidden="true"><rect width="96" height="96" rx="20" fill="#1E3A7B"/><text x="48" y="58" text-anchor="middle" font-family="'Arial Black','Helvetica Neue',Arial,sans-serif" font-weight="900" font-size="38" letter-spacing="-1" fill="#fff">SM</text><rect x="30" y="68" width="36" height="2" rx="1" fill="#4E6497"/></svg><div><b>선민종합관리(주)</b><small>FACILITY MANAGEMENT</small></div></div>
+      <table class="r-sign"><tr><th rowspan="2">결<br>재</th><th>담당</th><th>관리소장</th><th>관리단</th></tr><tr><td></td><td></td><td></td></tr></table>
+    </header>
+    <h1 class="r-title">${monthLabel(ym)} 민원 처리 현황 보고</h1>
+    <dl class="r-meta">
+      <div><dt>수신</dt><dd>${esc(meta.to)} 귀중</dd></div>
+      <div><dt>발신</dt><dd>${esc(meta.from)}</dd></div>
+      <div><dt>보고 기간</dt><dd>${ymd(d.s)} ~ ${ymd(new Date(d.e - 86400000))}</dd></div>
+      <div><dt>작성일</dt><dd>${ymd(new Date())}</dd></div>
+    </dl>
+
+    <h2>1. 처리 현황 요약</h2>
+    <div class="r-kpis">
+      <div><b>${d.recv.length}</b><span>이달 접수</span></div>
+      <div><b>${d.closedInMonth.length}</b><span>이달 처리 완료</span></div>
+      <div><b>${fmtPct(d.rate)}</b><span>이달 접수분 처리율</span></div>
+      <div><b>${fmtDays(d.avgDays)}</b><span>평균 처리 기간</span></div>
+      <div><b>${d.openEnd.length}</b><span>월말 미결</span></div>
+      <div><b>${d.urgent}</b><span>긴급 민원</span></div>
+    </div>
+    <ul class="r-notes">
+      <li>전월 이월 미결 ${d.carried.length}건, 이달 접수 ${d.recv.length}건(직원 현장 접수 ${d.byStaffReceived}건) 중 ${d.doneRecv.length}건 회신 완료</li>
+      <li>처리 기한 준수: ${d.dueTotal ? `기한이 정해진 ${d.dueTotal}건 중 ${d.onTime}건 기한 내 완료(${fmtPct(d.dueRate)})` : '기한이 정해진 민원 없음'}</li>
+      <li>'처리 완료'는 민원인 회신까지 마친 건, 처리 기간은 접수부터 회신까지입니다.</li>
+    </ul>
+
+    <h2>2. 분류별 현황</h2>
+    ${table(['분류', '접수', '', '완료', '미결'], d.byCat.map(g => `<tr><td>${esc(g.key)}</td><td class="n">${g.total}</td><td class="b">${bar(g.total, max)}</td><td class="n">${g.done}</td><td class="n">${g.open}</td></tr>`), '이달 접수된 민원이 없습니다.')}
+
+    <div class="r-two">
+      <section>
+        <h2>3. 동별 접수 (상위 10)</h2>
+        ${table(['동·장소', '접수', '미결'], d.byDong.map(g => `<tr><td>${esc(g.key)}</td><td class="n">${g.total}</td><td class="n">${g.open}</td></tr>`), '-')}
+      </section>
+      <section>
+        <h2>4. 담당자별 처리</h2>
+        ${table(['담당', '배정', '완료', '평균 기간'], d.byStaff.map(g => `<tr><td>${esc(g.key)}</td><td class="n">${g.total}</td><td class="n">${g.done}</td><td class="n">${fmtDays(g.avg)}</td></tr>`), '-')}
+      </section>
+    </div>
+
+    <h2>5. 이달 접수 민원 목록 (${d.recv.length}건)</h2>
+    ${table(['번호', '접수일', '동·호수', '분류', '민원 내용', '처리 내용', '담당', '상태'],
+      d.recv.map(c => `<tr><td class="n">${nums[c.id]}</td><td>${fmtDate(ymd(new Date(c.createdAt)))}</td><td>${esc(c.location)}</td><td>${esc(c.category)}</td><td>${c.urgent ? '<b class="r-urg">[긴급]</b> ' : ''}${esc(c.title)}</td><td>${esc(doneText(c))}</td><td>${esc(c.assignee ? staffName(c.assignee) : '-')}</td><td>${esc(stLabel(c))}</td></tr>`),
+      '이달 접수된 민원이 없습니다.')}
+
+    ${d.carried.length ? `<h2>6. 전월 이월 미결 (${d.carried.length}건)</h2>
+    ${table(['번호', '접수일', '동·호수', '민원 내용', '담당', '현재 상태'], d.carried.map(c => `<tr><td class="n">${nums[c.id]}</td><td>${fmtDate(ymd(new Date(c.createdAt)))}</td><td>${esc(c.location)}</td><td>${esc(c.title)}</td><td>${esc(c.assignee ? staffName(c.assignee) : '-')}</td><td>${esc(stLabel(c))}</td></tr>`), '-')}` : ''}
+
+    <h2>${d.carried.length ? 7 : 6}. 특이사항 및 관리소장 의견</h2>
+    <div class="r-text" id="rv-note">${esc(meta.note) || '<span class="rempty">없음</span>'}</div>
+    <h2>${d.carried.length ? 8 : 7}. 다음 달 계획</h2>
+    <div class="r-text" id="rv-plan">${esc(meta.plan) || '<span class="rempty">없음</span>'}</div>
+
+    <footer class="r-foot">선민종합관리(주) · 사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</footer>
+  </article>`;
+}
+function reportView(){
+  const ym = S.reportMonth || (S.reportMonth = prevMonth());
+  const m = reportMeta(ym);
+  return `<div class="d-head"><span class="no">관리소장 전용</span><h2>월간 보고서</h2></div>
+  <form id="f-monthly" class="sec">
+    <div class="grid2">
+      <label class="fld"><span>보고 월</span><input type="month" id="mr-month" value="${esc(ym)}" max="${ymd(new Date()).slice(0, 7)}"></label>
+      <label class="fld"><span>수신</span><input type="text" id="mr-to" value="${esc(m.to)}" placeholder="○○ 관리단"></label>
+      <label class="fld"><span>발신</span><input type="text" id="mr-from" value="${esc(m.from)}"></label>
+    </div>
+    <label class="fld"><span>특이사항 및 관리소장 의견</span><textarea id="mr-note" rows="4" placeholder="예) 9월 누수 민원 증가(5건) — 노후 배관 점검 필요. 105동 주차 민원 반복 접수.">${esc(m.note)}</textarea></label>
+    <label class="fld"><span>다음 달 계획</span><textarea id="mr-plan" rows="3" placeholder="예) 105동 지하주차장 조명 교체, 동절기 대비 배관 동파 예방 점검">${esc(m.plan)}</textarea></label>
+    <div class="btns">
+      <button type="submit" class="btn">의견 저장</button>
+      <button type="button" class="btn primary" data-act="report-print">인쇄 / PDF 저장</button>
+      <button type="button" class="btn" data-act="report-csv">엑셀(CSV) 받기</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-act="cancel">닫기</button>
+    </div>
+    <p class="hint">의견을 고치면 아래 미리보기에 바로 반영됩니다. 인쇄 창에서 '대상: PDF로 저장'을 고르면 파일로 저장해 관리단에 보낼 수 있습니다.</p>
+  </form>
+  <div class="report-preview" id="report-preview">${reportHTML(ym, m)}</div>`;
+}
+function currentReportMeta(){
+  return {to:val('mr-to'), from:val('mr-from'), note:val('mr-note'), plan:val('mr-plan')};
+}
+function printReport(){
+  const area = $('#print-area');
+  area.innerHTML = reportHTML(S.reportMonth, currentReportMeta());
+  window.print();
+}
+function reportCSV(){
+  const ym = S.reportMonth, d = reportData(ym), nums = numbers();
+  const rows = [['번호', '접수일시', '동', '호', '위치', '분류', '접수경로', '긴급', '제목', '내용', '접수자', '담당', '처리기한', '상태', '완료보고일', '처리내용', '회신일', '회신방법']];
+  d.recv.forEach(c => {
+    const done = lastEv(c, 'done'), rep = lastEv(c, 'replied');
+    rows.push([nums[c.id], fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
+      c.title || '', c.detail || '', receiver(c) || '관리소장', c.assignee ? staffName(c.assignee) : '', c.due || '', ST[c.status] ? ST[c.status].label : c.status,
+      done ? fmt(done.at) : '', done ? done.text || '' : '', rep ? fmt(rep.at) : '', rep ? rep.method || '' : '']);
+  });
+  const csv = '﻿' + rows.map(r => r.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+  a.download = `민원_${ym}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 function settingsView(){
@@ -814,6 +983,9 @@ document.addEventListener('click', e => {
   else if(a === 'new'){
     if(S.role === 'staff' && !S.me){ toast('먼저 오른쪽 위에서 내 이름을 선택하세요'); $('#me-select').focus(); return; }
     S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
+  else if(a === 'report'){ if(!S.canManage) return; S.panel = 'report'; render(); $('#detail').scrollIntoView({block:'start'}); }
+  else if(a === 'report-print'){ if(S.canManage) printReport(); }
+  else if(a === 'report-csv'){ if(S.canManage) reportCSV(); }
   else if(a === 'settings'){ if(!S.canManage) return; S.panel = 'settings'; render(); $('#detail').scrollIntoView({block:'nearest'}); }
   else if(a === 'cancel'){ S.panel = null; render(); }
   else if(a === 'copy'){ copyText(b.dataset.text); }
@@ -840,7 +1012,7 @@ document.addEventListener('click', e => {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `민원백업_${ymd(new Date())}.json`;
-    link.click();
+    document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
   else if(a === 'del'){
@@ -850,9 +1022,15 @@ document.addEventListener('click', e => {
   }
 });
 document.addEventListener('input', e => {
+  // 월간 보고서 의견을 고치면 미리보기에 바로 반영
+  if(e.target.id === 'mr-note' || e.target.id === 'mr-plan'){
+    const el = document.getElementById(e.target.id === 'mr-note' ? 'rv-note' : 'rv-plan');
+    if(el) el.innerHTML = esc(e.target.value) || '<span class="rempty">없음</span>';
+  }
   if(e.target.id === 'q'){ S.q = e.target.value; renderList(); }
 });
 document.addEventListener('change', async e => {
+  if(e.target.id === 'mr-month' && e.target.value){ S.reportMonth = e.target.value; resetDetail(); return; }
   if(e.target.id === 'photo-input' && e.target.files.length){
     const files = [...e.target.files].slice(0, PHOTO_LIMIT - pendingPhotos.length);
     toast('사진 준비 중…');
@@ -938,6 +1116,12 @@ document.addEventListener('submit', e => {
       .then(({error}) => { if(error) toast(/invalid/i.test(error.message) ? '아이디 또는 비밀번호가 틀렸습니다' : '로그인하지 못했습니다: ' + error.message); })
       .catch(() => toast('인터넷 연결을 확인하세요'))
       .finally(() => { btn.disabled = false; });
+  }
+  else if(f.id === 'f-monthly'){
+    if(!S.canManage) return;
+    const m = currentReportMeta(), ym = S.reportMonth;
+    const notes = Object.assign({}, S.settings.reportNotes, {[ym]:{note:m.note, plan:m.plan}});
+    run(f, () => store.saveSettings({reportNotes:notes, reportTo:m.to, reportFrom:m.from}), `${monthLabel(ym)} 보고서 의견을 저장했습니다`);
   }
   else if(f.id === 'f-settings'){
     run(f, () => store.saveSettings({company:val('s-co') || COMPANY, buildingName:val('s-bname'), officePhone:val('s-tel'), defaultOrder:val('s-order')}), '저장했습니다');
