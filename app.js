@@ -35,7 +35,7 @@ const LOGO_KEY = 'sunmin.minwon.logo';
 const MIGRATED_KEY = 'sunmin.minwon.migrated';
 const REFRESH_MS = 60000;            // 실시간 연결이 끊겼을 때를 대비한 주기적 새로 고침
 const DEFAULT_ORDER = '해당 호실 방문 및 처리 바랍니다';
-const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:'', defaultOrder:DEFAULT_ORDER, managers:''};
+const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:'', defaultOrder:DEFAULT_ORDER};
 const CFG = window.MINWON_CONFIG || {};
 const SERVER = !!(CFG.supabaseUrl && CFG.supabaseKey);
 
@@ -44,7 +44,7 @@ const S = {
   me: lsGet('meStaff'), complaints:[], staff:[], settings:Object.assign({}, DEFAULT_SETTINGS),
   logo: lsGet(LOGO_KEY) || '',
   sync:{state:'', at:null, msg:''},
-  user:null, authReady:!SERVER, canManage:true, lockMe:false
+  user:null, authReady:!SERVER, isManager:!SERVER, oldSchema:false, canManage:true, lockMe:false
 };
 
 function emptyData(){ return {complaints:[], staff:[], settings:Object.assign({}, DEFAULT_SETTINGS)}; }
@@ -80,7 +80,8 @@ function sbErr(error){
   const m = String(error && (error.message || error.error_description || error) || '');
   const e = new Error(m);
   e.code = /gone/.test(m) ? 'gone'
-    : /JWT|not authenticated|row-level security|permission denied|401|403/i.test(m) ? 'auth'
+    : /forbidden|row-level security|permission denied|403/i.test(m) ? 'forbidden'
+    : /JWT|not authenticated|401/i.test(m) ? 'auth'
     : /Failed to fetch|NetworkError|network/i.test(m) ? 'network' : 'server';
   return e;
 }
@@ -373,12 +374,12 @@ function renderBrand(){
   document.title = `${s.company || COMPANY} 민원 처리부`;
 }
 
-/* 로그인 계정에 따라 관리소장 화면 허용 여부와 '나는' 직원을 정한다 */
+/* 로그인 계정에 따라 관리소장 화면 허용 여부와 '나는' 직원을 정한다.
+ * 관리소장 여부는 서버(app_managers 표)가 정하고, 서버도 같은 기준으로 쓰기를 막는다. */
 function applyAccount(){
   const email = (S.user && S.user.email || '').toLowerCase();
-  const mgrs = (S.settings.managers || '').split(/[,\s]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
-  S.canManage = !SERVER || !mgrs.length || mgrs.includes(email);
-  if(!S.canManage) S.role = 'staff';
+  S.canManage = !SERVER || S.isManager;
+  if(!S.canManage){ S.role = 'staff'; if(S.panel === 'settings') S.panel = null; }
   const st = email && S.staff.find(x => (x.email || '').toLowerCase() === email);
   S.lockMe = !!st;
   if(st) S.me = st.id;
@@ -409,7 +410,8 @@ function render(){
   al.hidden = !(S.role === 'manager' && waiting > 0);
   al.innerHTML = `<span>직원 완료 보고가 올라왔습니다. 민원인에게 결과를 알려 주세요.</span><span>회신 대기 <b>${waiting}</b>건 →</span>`;
 
-  const warn = S.role !== 'manager' ? '' : !SERVER ? '서버가 아직 설정되지 않아 이 기기에만 저장됩니다. README의 「서버 설정」 안내를 따라 주세요.' : storageWarn();
+  const warn = S.role !== 'manager' ? '' : !SERVER ? '서버가 아직 설정되지 않아 이 기기에만 저장됩니다. README의 「서버 설정」 안내를 따라 주세요.'
+    : S.oldSchema ? '서버 권한 설정이 아직 예전 버전입니다. Supabase SQL Editor에서 supabase/schema.sql을 다시 실행해 주세요. 그 전까지는 직원 계정도 관리소장 기능을 쓸 수 있습니다.' : storageWarn();
   const nt = $('#notice'); nt.hidden = !warn; nt.textContent = warn;
 
   renderSummary(); renderList(); renderDetail();
@@ -525,7 +527,6 @@ function settingsView(){
       <label class="fld"><span>관리사무소 연락처</span><input type="tel" id="s-tel" value="${esc(s.officePhone)}" placeholder="02-000-0000"></label>
     </div>
     <label class="fld"><span>기본 지시 문구 (지시할 때 미리 채워짐)</span><input type="text" id="s-order" value="${esc(s.defaultOrder)}" placeholder="${DEFAULT_ORDER}"></label>
-    ${SERVER ? `<label class="fld"><span>관리소장 로그인 이메일 (쉼표로 구분 · 비우면 누구나 관리소장 화면 사용)</span><input type="text" id="s-managers" value="${esc(s.managers)}" placeholder="boss@example.com"></label>` : ''}
     <div>
     </div>
     <div class="btns"><button type="submit" class="btn primary">저장</button></div>
@@ -762,7 +763,8 @@ function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = fals
 function failMsg(e){
   if(e && e.code === 'quota_exceeded') return '저장 공간이 가득 찼습니다. 백업 후 오래된 민원을 삭제하거나 로고 이미지를 작게 줄이세요.';
   if(e && e.code === 'gone') return '다른 기기에서 삭제된 민원입니다.';
-  if(e && e.code === 'auth') return '로그인이 풀렸거나 권한이 없습니다. 다시 로그인해 주세요.';
+  if(e && e.code === 'forbidden') return '관리소장 계정만 할 수 있는 일입니다.';
+  if(e && e.code === 'auth') return '로그인이 풀렸습니다. 다시 로그인해 주세요.';
   if(e && e.code === 'network' || e instanceof TypeError) return '인터넷 연결을 확인하세요. 저장되지 않았습니다.';
   if(e && e.code === 'server') return '서버에 저장하지 못했습니다: ' + e.message;
   return '저장하지 못했습니다. 잠시 후 다시 시도하세요.';
@@ -805,13 +807,13 @@ let delArm = null;
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b) return;
   const a = b.dataset.act;
-  if(a === 'role'){ S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
+  if(a === 'role'){ if(b.dataset.role === 'manager' && !S.canManage) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
   else if(a === 'open'){ S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
   else if(a === 'new'){
     if(S.role === 'staff' && !S.me){ toast('먼저 오른쪽 위에서 내 이름을 선택하세요'); $('#me-select').focus(); return; }
     S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
-  else if(a === 'settings'){ S.panel = 'settings'; render(); $('#detail').scrollIntoView({block:'nearest'}); }
+  else if(a === 'settings'){ if(!S.canManage) return; S.panel = 'settings'; render(); $('#detail').scrollIntoView({block:'nearest'}); }
   else if(a === 'cancel'){ S.panel = null; render(); }
   else if(a === 'copy'){ copyText(b.dataset.text); }
   else if(a === 'share-kakao'){ shareKakao(); }
@@ -937,7 +939,7 @@ document.addEventListener('submit', e => {
       .finally(() => { btn.disabled = false; });
   }
   else if(f.id === 'f-settings'){
-    run(f, () => store.saveSettings({company:val('s-co') || COMPANY, buildingName:val('s-bname'), officePhone:val('s-tel'), defaultOrder:val('s-order'), managers:SERVER ? val('s-managers') : ''}), '저장했습니다');
+    run(f, () => store.saveSettings({company:val('s-co') || COMPANY, buildingName:val('s-bname'), officePhone:val('s-tel'), defaultOrder:val('s-order')}), '저장했습니다');
   }
   else if(f.id === 'f-staff'){
     run(f, () => store.addStaff({name:val('st-name'), duty:val('st-duty'), email:SERVER ? val('st-email') : '', createdAt:now()}), '직원을 추가했습니다');
@@ -962,13 +964,21 @@ async function onSignedIn(user){
   S.user = user;
   if(!first) return;
   setSync('saving', '불러오는 중');
+  try { S.isManager = !!(await q(sb.rpc('is_manager'))); S.oldSchema = false; }
+  catch(e){
+    console.error(e);
+    // 권한 함수가 없는 예전 서버: 지금까지처럼 모두 허용하고 소장님께 SQL 재실행을 안내
+    S.oldSchema = e.code !== 'network' && e.code !== 'auth';
+    S.isManager = S.oldSchema;
+  }
+  if(!S.isManager){ S.role = 'staff'; lsSet('role', 'staff'); }
   render();
   await reload();
   subscribe();
-  offerMigration();
+  if(S.isManager) offerMigration();
 }
 function onSignedOut(){
-  S.user = null;
+  S.user = null; S.isManager = false;
   if(channel){ sb.removeChannel(channel); channel = null; }
   applyData(emptyData());
   photoCache.clear();
