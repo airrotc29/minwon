@@ -118,7 +118,7 @@ async function fetchAll(table){
 const rowToComplaint = r => Object.assign({}, r.data, {id:r.id, site:r.site_id || 'main', events:[]});
 const rowToEvent = r => Object.assign({}, r.data, {id:r.id});
 const rowToStaff = r => Object.assign({}, r.data, {id:r.id, site:r.site_id || 'main'});
-const rowToSite = r => ({id:r.id, name:r.name, archived:!!r.archived, createdAt:r.created_at});
+const rowToSite = r => ({id:r.id, name:r.name, archived:!!r.archived, staffToken:r.staff_token || '', createdAt:r.created_at});
 const rowToUser = r => ({email:r.email, role:r.role, site:r.site_id, name:r.name || ''});
 const bySiteName = (a, b) => (a.archived - b.archived) || a.name.localeCompare(b.name, 'ko');
 function assemble(cRows, eRows, sRows, setRows, siteRows, userRows){
@@ -381,8 +381,25 @@ const store = {
     S.db.users.sort((a, b) => a.email.localeCompare(b.email));
   },
   async removeUser(email){
-    await write(() => q(sb.from('app_users').delete().eq('email', email)));
+    await write(() => q(sb.rpc('remove_login', {p_email:email})));
     S.db.users = S.db.users.filter(x => x.email !== email);
+  },
+  resetPassword(email, pw){ return write(() => q(sb.rpc('set_login_password', {p_email:email, p_password:pw}))); },
+  /* 본사가 앱에서 로그인 계정을 만든다. 내 로그인이 바뀌지 않도록 별도 클라이언트로 가입시킨다 */
+  async createLogin(email, pw){
+    const tmp = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, {auth:{persistSession:false, autoRefreshToken:false, detectSessionInUrl:false}});
+    const {data, error} = await tmp.auth.signUp({email, password:pw});
+    if(error){
+      if(/already|registered|exists/i.test(error.message)) return 'exists';
+      const e = new Error(error.message); e.code = /signups? not allowed|disabled/i.test(error.message) ? 'signup_off' : 'server'; throw e;
+    }
+    if(data && data.user && !data.session && (data.user.identities || []).length === 0) return 'exists';   // 이미 있는 이메일(확인 메일 켜진 경우의 응답)
+    return data && data.session ? 'created' : 'unconfirmed';
+  },
+  async rotateStaffLink(){
+    const t = await write(() => q(sb.rpc('rotate_staff_link', {sid:S.site})));
+    const st = S.db.sites.find(x => x.id === S.site); if(st) st.staffToken = t;
+    return t;
   }
 };
 
@@ -443,15 +460,29 @@ function applyAccount(){
 function render(){
   renderBrand();
   renderSync();
-  const needLogin = SERVER && S.authReady && !S.user;
-  document.body.classList.toggle('need-login', SERVER && !S.user);
+  /* 직원 링크로 들어왔는데 연결에 실패한 경우: 로그인 화면 대신 이유를 보여준다 */
+  const linkFail = SERVER && S.authReady && !S.user && !!S.linkError;
+  const needLogin = SERVER && S.authReady && !S.user && !linkFail;
+  document.body.classList.toggle('need-login', SERVER && !S.user && !linkFail);
+  document.body.classList.toggle('no-access', linkFail);
   $('#login').hidden = !needLogin;
   $('#acct').hidden = !(SERVER && S.user);
+  if(linkFail){
+    $('#no-access').hidden = false;
+    $('#no-access .msg').innerHTML = `<strong>직원 접속 링크로 연결하지 못했습니다</strong>${esc(S.linkError)}`;
+    return;
+  }
   if(SERVER && !S.user) return;
-  if(S.user) $('#acct').textContent = `${S.user.email.split('@')[0]} · 로그아웃`;
+  if(S.user) $('#acct').textContent = S.user.email ? `${S.user.email.split('@')[0]} · 로그아웃` : '직원 (링크 접속) · 연결 끊기';
   applyAccount();
   const noAccess = SERVER && S.user && !S.oldSchema && !(S.access && S.access.role);
   $('#no-access').hidden = !noAccess;
+  if(noAccess){
+    const anon = !S.user.email;
+    $('#no-access .msg').innerHTML = anon
+      ? `<strong>직원 접속 링크가 만료되었거나 잘못되었습니다</strong>${S.linkError ? esc(S.linkError) + '<br>' : ''}관리소장에게 새 접속 링크(QR)를 받아 다시 열어 주세요. 관리소장은 <b>직원·설정 → 직원 접속 링크</b>에서 만들 수 있습니다.`
+      : `<strong>아직 사업장이 지정되지 않은 계정입니다</strong>본사 담당자가 「본사 → 계정 관리」에서 이 이메일(${esc(S.user.email)})의 역할과 사업장을 지정하면 바로 쓸 수 있습니다. 지정된 뒤에는 이 화면을 새로 고침하세요.`;
+  }
   document.body.classList.toggle('no-access', noAccess);
   if(noAccess) return;
   const hqPanel = S.panel === 'hq';
@@ -553,6 +584,7 @@ function renderDetail(){
   openDet.forEach(id => { const d = document.getElementById(id); if(d) d.open = true; });
   if(focusId){ const f = document.getElementById(focusId); if(f) f.focus(); }
   hydratePhotos(el);
+  if(S.panel === 'settings') drawQR();
   if(S.panel === 'report' && el.querySelector('#report-preview')){
     // 다시 그려도 저장 안 한 의견이 미리보기에 남도록
     $('#report-preview').innerHTML = reportHTML(S.reportMonth, currentReportMeta());
@@ -837,18 +869,19 @@ function hqView(){
   </div>
   <div class="sec act">
     <h3>계정 관리 <span class="hint">(${S.db.users.length}명)</span></h3>
-    <p class="hint">로그인 계정 자체는 Supabase → Authentication → Users에서 만들고(Add user → Create new user, Auto Confirm 체크), 여기서 그 이메일의 <b>역할과 사업장</b>을 지정합니다. 순서는 상관없습니다. 지정되지 않은 계정은 로그인해도 아무것도 볼 수 없습니다.</p>
-    ${S.db.users.length ? `<div class="tscroll"><table class="rtable"><thead><tr><th>이메일</th><th>역할</th><th>사업장</th><th>이름</th><th></th></tr></thead><tbody>
-      ${S.db.users.map(u => `<tr><td>${esc(u.email)}</td><td>${esc(ROLE_LABEL[u.role] || u.role)}</td><td>${u.role === 'hq' ? '전체' : esc(siteName(u.site) || u.site || '-')}</td><td>${esc(u.name)}</td><td class="n">${u.email === (S.user.email || '').toLowerCase() ? '<span class="hint">나</span>' : `<button type="button" class="btn sm danger" data-act="hq-user-del" data-email="${esc(u.email)}">해제</button>`}</td></tr>`).join('')}
+    <p class="hint">관리소장 계정은 여기서 바로 만듭니다(이메일 형식의 아이디 + 비밀번호 6자 이상). 만든 아이디·비밀번호를 소장에게 알려 주세요. 직원은 계정이 필요 없고, 소장이 <b>직원·설정 → 직원 접속 링크</b>로 들여보냅니다.</p>
+    ${S.db.users.length ? `<div class="tscroll"><table class="rtable"><thead><tr><th>아이디(이메일)</th><th>역할</th><th>사업장</th><th>이름</th><th></th></tr></thead><tbody>
+      ${S.db.users.map(u => { const me = u.email === (S.user.email || '').toLowerCase(); return `<tr><td>${esc(u.email)}</td><td>${esc(ROLE_LABEL[u.role] || u.role)}</td><td>${u.role === 'hq' ? '전체' : esc(siteName(u.site) || u.site || '-')}</td><td>${esc(u.name)}</td><td class="n nowrap">${me ? '<span class="hint">나</span>' : `<button type="button" class="btn sm" data-act="hq-user-pw" data-email="${esc(u.email)}">비밀번호 재설정</button> <button type="button" class="btn sm danger" data-act="hq-user-del" data-email="${esc(u.email)}">삭제</button>`}</td></tr>`; }).join('')}
     </tbody></table></div>` : ''}
     <form id="f-user" class="grid2">
-      <label class="fld"><span>이메일</span><input type="email" id="u-email" required placeholder="로그인 이메일"></label>
-      <label class="fld"><span>역할</span><select id="u-role"><option value="staff">직원</option><option value="manager">관리소장</option><option value="hq">본사 담당자</option></select></label>
+      <label class="fld"><span>아이디 (이메일 형식)</span><input type="email" id="u-email" required placeholder="예) cheongna@sunmin.kr"></label>
+      <label class="fld"><span>비밀번호 (새 계정이면 필수, 6자 이상)</span><input type="password" id="u-pw" autocomplete="new-password" placeholder="기존 계정은 비워 두면 역할만 바뀜"></label>
+      <label class="fld"><span>역할</span><select id="u-role"><option value="manager">관리소장</option><option value="hq">본사 담당자</option></select></label>
       <label class="fld"><span>사업장</span><select id="u-site">${siteOpts(S.site)}</select></label>
-      <label class="fld"><span>이름 (선택)</span><input type="text" id="u-name" placeholder="예) 박주임"></label>
-      <div class="btns" style="align-self:end"><button type="submit" class="btn">지정 / 변경</button></div>
+      <label class="fld"><span>이름 (선택)</span><input type="text" id="u-name" placeholder="예) 박소장"></label>
+      <div class="btns" style="align-self:end"><button type="submit" class="btn primary">계정 만들기 / 지정</button></div>
     </form>
-    <p class="hint">직원 공용 계정 하나를 사업장마다 두려면 사업장별로 이메일을 다르게 만들어(예: staff-cheongna@sunmin.kr) 각각 그 사업장의 '직원'으로 지정하세요.</p>
+    <p class="hint">이메일은 실제로 쓰지 않아도 되며(메일 발송 없음) 로그인 아이디로만 쓰입니다. 비밀번호를 잊으면 위 목록의 <b>비밀번호 재설정</b>으로 새로 정해 알려 주세요.</p>
   </div>`;
 }
 function printHqReport(){
@@ -888,10 +921,10 @@ function settingsView(){
     <form id="f-staff" class="grid2">
       <label class="fld"><span>이름</span><input type="text" id="st-name" required placeholder="이름"></label>
       <label class="fld"><span>담당 업무</span><input type="text" id="st-duty" placeholder="전기 / 설비 / 경비 / 미화"></label>
-      ${SERVER ? '<label class="fld"><span>로그인 이메일 (선택)</span><input type="email" id="st-email" placeholder="그 직원이 로그인하는 이메일"></label>' : ''}
       <div class="btns" style="align-self:end"><button type="submit" class="btn">직원 추가</button></div>
     </form>
   </div>
+  ${staffLinkSection()}
   ${serverSection()}
   <div class="sec act">
     <h3>데이터 백업</h3>
@@ -912,6 +945,40 @@ function storageInfo(){
 function storageWarn(){
   const u = storageInfo();
   return u.pct >= 80 ? `사진 저장 공간을 약 ${u.pct}% 썼습니다(사진 ${u.n}장, 약 ${Math.round(u.mb)}MB / 무료 1GB). README의 「사진 용량」을 참고해 요금제를 올리거나 오래된 사진을 정리하세요.` : '';
+}
+
+function staffLink(){
+  const st = S.db.sites.find(x => x.id === S.site);
+  return st && st.staffToken ? location.origin + location.pathname + '#staff=' + st.staffToken : '';
+}
+function staffLinkSection(){
+  if(!SERVER) return '';
+  const link = staffLink();
+  return `<div class="sec act">
+    <h3>직원 접속 링크</h3>
+    <p class="hint">직원은 아이디·비밀번호 없이 이 링크(또는 QR)를 휴대폰에서 한 번 열면 <b>${esc(siteName())}</b> 직원 화면이 열리고, 그 뒤로는 그 휴대폰에서 계속 유지됩니다. 직원이 바뀌면 <b>링크 새로 만들기</b>를 누르세요. 예전 링크로 들어온 휴대폰은 그 즉시 막힙니다.</p>
+    ${link ? `<div class="linkbox">
+        <canvas id="staff-qr" width="180" height="180" aria-label="직원 접속 QR"></canvas>
+        <div class="linkside">
+          <code class="linktext" id="staff-link">${esc(link)}</code>
+          <div class="btns"><button type="button" class="btn" data-act="link-copy">링크 복사</button><button type="button" class="btn kakao" data-act="link-share">카톡으로 보내기</button></div>
+          <p class="hint">직원 휴대폰 카메라로 QR을 찍거나, 카톡으로 보낸 링크를 누르면 됩니다.</p>
+        </div>
+      </div>
+      <div class="btns"><button type="button" class="btn danger" data-act="link-rotate">링크 새로 만들기 (예전 링크 무효)</button></div>`
+    : `<div class="btns"><button type="button" class="btn primary" data-act="link-rotate">직원 접속 링크 만들기</button></div>`}
+  </div>`;
+}
+let qrLib = null;
+function loadQR(){
+  if(window.QRCode) return Promise.resolve(window.QRCode);
+  if(qrLib) return qrLib;
+  qrLib = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js'; sc.onload = () => res(window.QRCode); sc.onerror = () => { qrLib = null; rej(new Error('qr')); }; document.head.appendChild(sc); });
+  return qrLib;
+}
+function drawQR(){
+  const cv = document.getElementById('staff-qr'); if(!cv) return;
+  loadQR().then(QR => QR.toCanvas(cv, staffLink(), {width:180, margin:1, color:{dark:'#141B2D'}})).catch(() => { cv.replaceWith(Object.assign(document.createElement('p'), {className:'hint', textContent:'QR을 불러오지 못했습니다. 링크를 복사해 보내 주세요.'})); });
 }
 
 function serverSection(){
@@ -1104,7 +1171,8 @@ function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = fals
 function failMsg(e){
   if(e && e.code === 'quota_exceeded') return '저장 공간이 가득 찼습니다. 백업 후 오래된 민원을 삭제하거나 로고 이미지를 작게 줄이세요.';
   if(e && e.code === 'gone') return '다른 기기에서 삭제된 민원입니다.';
-  if(e && e.code === 'forbidden') return '관리소장 계정만 할 수 있는 일입니다.';
+  if(e && e.code === 'forbidden') return '권한이 없는 작업입니다.';
+  if(e && e.code === 'signup_off') return 'Supabase → Authentication → Sign In / Providers 에서 "Allow new users to sign up"을 켜야 계정을 만들 수 있습니다.';
   if(e && e.code === 'auth') return '로그인이 풀렸습니다. 다시 로그인해 주세요.';
   if(e && e.code === 'network' || e instanceof TypeError) return '인터넷 연결을 확인하세요. 저장되지 않았습니다.';
   if(e && e.code === 'server') return '서버에 저장하지 못했습니다: ' + e.message;
@@ -1148,7 +1216,8 @@ let delArm = null;
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b) return;
   const a = b.dataset.act;
-  if(a === 'hq'){ if(!S.hq) return; S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
+  if(a === 'page-reload'){ location.reload(); }
+  else if(a === 'hq'){ if(!S.hq) return; S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
   else if(a === 'hq-enter'){ if(!S.hq) return; enterSite(b.dataset.site); }
   else if(a === 'hq-print'){ if(S.hq) printHqReport(); }
   else if(a === 'hq-archive'){
@@ -1160,8 +1229,24 @@ document.addEventListener('click', e => {
   }
   else if(a === 'hq-user-del'){
     if(!S.hq) return;
-    if(!confirm(`${b.dataset.email} 계정의 지정을 해제할까요? 해제하면 로그인해도 아무것도 볼 수 없습니다. (로그인 계정 자체는 Supabase에서 지웁니다)`)) return;
-    run(null, () => store.removeUser(b.dataset.email), '지정을 해제했습니다');
+    if(!confirm(`${b.dataset.email} 계정을 삭제할까요? 그 아이디로는 더 이상 로그인할 수 없습니다. (민원 기록은 남습니다)`)) return;
+    run(null, () => store.removeUser(b.dataset.email), '계정을 삭제했습니다');
+  }
+  else if(a === 'hq-user-pw'){
+    if(!S.hq) return;
+    const pw = prompt(`${b.dataset.email}의 새 비밀번호 (6자 이상)`); if(pw == null) return;
+    if(pw.trim().length < 6){ toast('비밀번호는 6자 이상이어야 합니다'); return; }
+    run(null, () => store.resetPassword(b.dataset.email, pw.trim()), '비밀번호를 바꿨습니다. 소장에게 알려 주세요.');
+  }
+  else if(a === 'link-rotate'){
+    if(!S.canManage) return;
+    if(staffLink() && !confirm('링크를 새로 만들까요? 예전 링크로 들어와 있던 직원 휴대폰은 모두 막히고, 새 링크를 다시 열어야 합니다.')) return;
+    run(null, () => store.rotateStaffLink(), '직원 접속 링크를 만들었습니다');
+  }
+  else if(a === 'link-copy'){ copyText(staffLink()); }
+  else if(a === 'link-share'){
+    const link = staffLink(), text = `[${S.settings.company || COMPANY} ${siteName()}] 민원 처리부 직원 접속 링크입니다. 휴대폰에서 한 번 열어 두세요.\n${link}`;
+    if(navigator.share) navigator.share({text}).catch(() => {}); else copyText(text);
   }
   else if(a === 'role'){ if(b.dataset.role === 'manager' && !S.canManage) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
@@ -1332,17 +1417,32 @@ document.addEventListener('submit', e => {
   }
   else if(f.id === 'f-user'){
     if(!S.hq) return;
-    const email = val('u-email').toLowerCase(), role = val('u-role'), site = val('u-site'), name = val('u-name');
+    const email = val('u-email').toLowerCase(), pw = document.getElementById('u-pw').value.trim(), role = val('u-role'), site = val('u-site'), name = val('u-name');
     if(role !== 'hq' && !site){ toast('사업장을 고르세요'); return; }
-    run(f, () => store.saveUser({email, role, site:role === 'hq' ? null : site, name}), `${email} → ${ROLE_LABEL[role]}${role === 'hq' ? '' : ' (' + siteName(site) + ')'}`);
+    if(pw && pw.length < 6){ toast('비밀번호는 6자 이상이어야 합니다'); return; }
+    const exists = S.db.users.some(u => u.email === email);
+    if(!pw && !exists){ toast('새 계정은 비밀번호가 필요합니다'); return; }
+    run(f, async () => {
+      let how = 'assigned';
+      if(pw){
+        how = await store.createLogin(email, pw);
+        if(how === 'exists') await store.resetPassword(email, pw);
+      }
+      await store.saveUser({email, role, site:role === 'hq' ? null : site, name});
+      if(how === 'unconfirmed') toast('계정은 만들었지만 Supabase의 Email → Confirm email 이 켜져 있어 로그인이 안 될 수 있습니다. 꺼 주세요.');
+      return how;
+    }, `${email} → ${ROLE_LABEL[role]}${role === 'hq' ? '' : ' (' + siteName(site) + ')'}${pw ? ' · 비밀번호 설정됨' : ''}`);
   }
   else if(f.id === 'f-settings'){
     run(f, () => store.saveSettings({company:val('s-co') || COMPANY, buildingName:val('s-bname'), officePhone:val('s-tel'), defaultOrder:val('s-order')}), '저장했습니다');
   }
   else if(f.id === 'f-staff'){
-    run(f, () => store.addStaff({name:val('st-name'), duty:val('st-duty'), email:SERVER ? val('st-email') : '', createdAt:now()}), '직원을 추가했습니다');
+    run(f, () => store.addStaff({name:val('st-name'), duty:val('st-duty'), createdAt:now()}), '직원을 추가했습니다');
   }
 });
+
+/* 앱이 이미 열린 상태에서 직원 링크를 누르면(주소의 #만 바뀜) 처음부터 다시 시작해 링크를 적용 */
+window.addEventListener('hashchange', () => { if(/^#staff=/.test(location.hash)) location.reload(); });
 
 /* 서버 없이 쓸 때: 같은 PC에서 관리소장 창과 직원 창을 따로 열어도 서로 반영 */
 window.addEventListener('storage', e => { if(e.key === KEY && !SERVER){ loadLocal(); render(); } });
@@ -1400,9 +1500,25 @@ async function boot(){
   }
   sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey);
   render();
-  const {data} = await sb.auth.getSession();
+  let session = ((await sb.auth.getSession()).data || {}).session;
+  /* 직원 접속 링크(#staff=토큰): 익명 로그인 뒤 이 기기를 그 사업장 직원으로 등록 */
+  const m = location.hash.match(/^#staff=([A-Za-z0-9]{16,})$/);
+  if(m){
+    history.replaceState(null, '', location.pathname + location.search);
+    if(session && session.user.email){
+      toast('이미 로그인된 계정이 있어 직원 링크를 적용하지 않았습니다. 직원 휴대폰에서 열어 주세요.');
+    } else {
+      try {
+        if(!session){ const r = await sb.auth.signInAnonymously(); if(r.error) throw r.error; session = r.data.session; }
+        await q(sb.rpc('claim_staff_link', {p_token:m[1]}));
+      } catch(e){
+        console.error(e);
+        S.linkError = /anonymous/i.test(e.message) ? '서버에서 직원 링크 접속(Anonymous sign-ins)이 꺼져 있습니다. 본사에 문의하세요.' : /invalid/i.test(e.message) ? '이 링크는 더 이상 유효하지 않습니다.' : '연결에 실패했습니다. 인터넷을 확인하고 다시 열어 주세요.';
+      }
+    }
+  }
   S.authReady = true;
-  if(data && data.session) await onSignedIn(data.session.user); else render();
+  if(session) await onSignedIn(session.user); else render();
   sb.auth.onAuthStateChange((ev, session) => {
     if(session && session.user) onSignedIn(session.user);
     else if(ev === 'SIGNED_OUT') onSignedOut();

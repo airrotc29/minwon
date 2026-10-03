@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 <div class="app">
@@ -46,8 +46,8 @@
     </div>
   </header>
   <section class="panel login" id="no-access" hidden>
-    <div class="empty"><strong>아직 사업장이 지정되지 않은 계정입니다</strong>본사 담당자가 「본사 → 계정 관리」에서 이 이메일의 역할과 사업장을 지정하면 바로 쓸 수 있습니다. 지정된 뒤에는 이 화면을 새로 고침하세요.
-      <div class="btns"><button type="button" class="btn" data-act="sync-now">새로 고침</button><button type="button" class="btn" data-act="logout">로그아웃</button></div></div>
+    <div class="empty"><div class="msg"></div>
+      <div class="btns"><button type="button" class="btn" data-act="page-reload">다시 시도</button><button type="button" class="btn" data-act="logout">로그아웃</button></div></div>
   </section>
   <div class="notice" id="notice" role="status" hidden></div>
   <button type="button" class="alert" id="reply-alert" data-act="filter" data-f="done" hidden></button>
@@ -62,7 +62,7 @@
     </div>
     <form id="f-login" class="sec">
       <h2>로그인</h2>
-      <p class="hint">본사 또는 관리사무소에서 받은 아이디(이메일)와 비밀번호로 로그인하세요. 한 번 로그인하면 이 기기에서는 로그인이 유지됩니다.</p>
+      <p class="hint">본사 담당자와 관리소장만 아이디(이메일)·비밀번호로 로그인합니다. <b>직원은 로그인이 필요 없습니다.</b> 관리소장이 보낸 직원 접속 링크(QR)를 열면 바로 직원 화면이 열립니다.</p>
       <label class="fld"><span>아이디 (이메일)</span><input type="email" id="lg-email" autocomplete="username" required></label>
       <label class="fld"><span>비밀번호</span><input type="password" id="lg-pw" autocomplete="current-password" required></label>
       <div class="btns"><button type="submit" class="btn primary">로그인</button></div>
@@ -86,6 +86,6 @@
 <div id="print-area" aria-hidden="true"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js?v=11"></script>
-<script src="app.js?v=20"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

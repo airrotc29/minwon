@@ -6,6 +6,12 @@
 --   hq      본사 담당자 : 모든 사업장을 보고 관리, 사업장·계정 관리
 --   manager 관리소장    : 자기 사업장의 지시·회신·재작업·삭제·직원 명단·설정·월간 보고
 --   staff   직원        : 자기 사업장의 접수, 진행·완료 보고, 사진 올리기만
+--                        (아이디·비밀번호 없이 관리소장이 만든 '직원 접속 링크'로 들어온다 → staff_sessions)
+--
+-- Supabase 대시보드에서 한 번 켜 둘 것 (Authentication → Sign In / Providers):
+--   · Anonymous sign-ins: ON      (직원이 링크만으로 들어오기 위해)
+--   · Allow new users to sign up: ON, Email → Confirm email: OFF  (본사가 앱에서 관리소장 계정을 만들기 위해)
+--   지정되지 않은 계정은 로그인해도 아무것도 볼 수 없으므로 가입이 열려 있어도 기록은 보호됩니다.
 
 -- 1) 표 ------------------------------------------------------------------
 create table if not exists public.sites (             -- 사업장(단지·건물)
@@ -36,6 +42,12 @@ create table if not exists public.settings (          -- 사업장별 설정 (id
   id   text primary key,
   data jsonb not null default '{}'::jsonb
 );
+create table if not exists public.staff_sessions (    -- 직원 링크로 들어온 기기(익명 로그인) → 사업장
+  user_id    uuid primary key,
+  site_id    text not null references public.sites(id),
+  token      text not null,                           -- 들어올 때 쓴 링크 토큰(링크를 새로 만들면 무효)
+  created_at timestamptz not null default now()
+);
 create table if not exists public.app_users (         -- 로그인 계정 → 역할·사업장
   email      text primary key,
   role       text not null check (role in ('hq', 'manager', 'staff')),
@@ -48,6 +60,8 @@ create table if not exists public.app_users (         -- 로그인 계정 → �
 alter table public.complaints add column if not exists site_id text not null default 'main';
 alter table public.events     add column if not exists site_id text not null default 'main';
 alter table public.staff      add column if not exists site_id text not null default 'main';
+alter table public.sites      add column if not exists staff_token text unique;   -- 직원 접속 링크
+create extension if not exists pgcrypto with schema extensions;
 create index if not exists complaints_site_idx on public.complaints(site_id);
 create index if not exists events_site_idx     on public.events(site_id);
 create index if not exists staff_site_idx      on public.staff(site_id);
@@ -87,21 +101,67 @@ do $$ begin
 end $$;
 
 -- 로그인한 사람의 역할·사업장 (서버 보안 규칙과 앱 화면이 같은 기준을 쓴다)
+--   이메일 계정 → app_users / 직원 링크(익명 로그인) → staff_sessions (링크 토큰이 현재 것과 같을 때만)
 create or replace function public.my_access()
 returns jsonb language sql stable security definer set search_path = public as $$
   select coalesce(
     (select jsonb_build_object('role', role, 'site_id', site_id, 'name', name)
-       from app_users where email = lower(coalesce(auth.jwt() ->> 'email', ''))),
+       from app_users where email = lower(nullif(auth.jwt() ->> 'email', ''))),
+    (select jsonb_build_object('role', 'staff', 'site_id', ss.site_id, 'link', true)
+       from staff_sessions ss join sites s on s.id = ss.site_id
+       where ss.user_id = auth.uid() and ss.token = s.staff_token and not s.archived),
     '{}'::jsonb);
 $$;
 create or replace function public.my_role()
 returns text language sql stable security definer set search_path = public as $$
-  select role from app_users where email = lower(coalesce(auth.jwt() ->> 'email', ''));
+  select public.my_access() ->> 'role';
 $$;
 create or replace function public.my_site()
 returns text language sql stable security definer set search_path = public as $$
-  select site_id from app_users where email = lower(coalesce(auth.jwt() ->> 'email', ''));
+  select public.my_access() ->> 'site_id';
 $$;
+
+-- 직원 접속 링크: 관리소장(또는 본사)이 만들고, 새로 만들면 예전 링크로 들어온 기기는 모두 막힌다
+create or replace function public.rotate_staff_link(sid text)
+returns text language plpgsql security definer set search_path = public as $$
+declare t text;
+begin
+  if not can_manage(sid) then raise exception 'forbidden'; end if;
+  t := encode(extensions.gen_random_bytes(18), 'hex');
+  update sites set staff_token = t where id = sid;
+  if not found then raise exception 'gone'; end if;
+  return t;
+end $$;
+-- 직원 기기가 링크를 열 때(익명 로그인 뒤) 호출: 토큰이 맞으면 이 기기를 그 사업장 직원으로 등록
+create or replace function public.claim_staff_link(p_token text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_site sites%rowtype;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  select * into v_site from sites where staff_token = p_token and not archived and p_token is not null and p_token <> '';
+  if not found then raise exception 'invalid link'; end if;
+  insert into staff_sessions(user_id, site_id, token) values (auth.uid(), v_site.id, p_token)
+    on conflict (user_id) do update set site_id = excluded.site_id, token = excluded.token, created_at = now();
+  return jsonb_build_object('site_id', v_site.id, 'name', v_site.name);
+end $$;
+-- 본사: 관리소장 비밀번호 재설정 / 로그인 계정 삭제 (앱 「본사 → 계정 관리」에서 사용)
+create or replace function public.set_login_password(p_email text, p_password text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not is_hq() then raise exception 'forbidden'; end if;
+  if length(coalesce(p_password, '')) < 6 then raise exception 'password too short'; end if;
+  update auth.users set encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf')), updated_at = now()
+    where lower(email) = lower(p_email);
+  if not found then raise exception 'not found'; end if;
+end $$;
+create or replace function public.remove_login(p_email text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not is_hq() then raise exception 'forbidden'; end if;
+  if lower(p_email) = lower(coalesce(auth.jwt() ->> 'email', '')) then raise exception 'self'; end if;
+  delete from app_users where email = lower(p_email);
+  delete from auth.users where lower(email) = lower(p_email);
+end $$;
 create or replace function public.is_hq()
 returns boolean language sql stable security definer set search_path = public as $$
   select coalesce(public.my_role() = 'hq', false);
@@ -128,6 +188,7 @@ alter table public.events     enable row level security;
 alter table public.staff      enable row level security;
 alter table public.settings   enable row level security;
 alter table public.app_users  enable row level security;
+alter table public.staff_sessions enable row level security;   -- 함수로만 다룬다(직접 읽기·쓰기 불가)
 
 do $$
 declare t text;
@@ -209,7 +270,8 @@ do $$
 declare f text;
 begin
   foreach f in array array['my_access()', 'my_role()', 'my_site()', 'is_hq()', 'can_view(text)', 'can_manage(text)', 'is_manager()',
-                           'add_complaint(text, jsonb, jsonb, text)', 'apply_action(text, jsonb, jsonb)', 'merge_settings(jsonb, text)'] loop
+                           'add_complaint(text, jsonb, jsonb, text)', 'apply_action(text, jsonb, jsonb)', 'merge_settings(jsonb, text)',
+                           'rotate_staff_link(text)', 'claim_staff_link(text)', 'set_login_password(text, text)', 'remove_login(text)'] loop
     execute format('revoke execute on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);
   end loop;
