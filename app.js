@@ -1521,19 +1521,18 @@ function managerActions(c){
 
 /* 3. 직원: 진행 보고 · 완료 보고 */
 function staffActions(c, mine){
+  const receivedByMe = !mine && c.receivedBy === S.me;
   if(!mine){
-    if(c.receivedBy === S.me){
-      const msg = c.status === 'received' ? '내가 접수한 민원입니다. 소장님 지시를 기다리고 있습니다.'
-        : c.status === 'replied' ? '내가 접수한 민원입니다. 회신까지 끝났습니다.'
-        : `내가 접수한 민원입니다. ${esc(namesOf(c))} 담당으로 처리 중입니다.`;
-      return `<div class="act"><p class="hint">${msg}</p></div>`;
-    }
-    return '<p class="hint">내게 지시된 민원이 아닙니다.</p>';
+    if(receivedByMe){
+      // 내가 접수한 민원: 소장이 지시하기 전에는 기다리고, 지시된 뒤에는 나도 진행·완료 보고를 올릴 수 있다
+      if(c.status === 'received') return '<div class="act"><p class="hint">내가 접수한 민원입니다. 소장님 지시를 기다리고 있습니다.</p></div>';
+      if(c.status === 'replied') return '<div class="act"><p class="hint">내가 접수한 민원입니다. 회신까지 끝났습니다.</p></div>';
+    }else return '<p class="hint">내게 지시된 민원이 아닙니다.</p>';
   }
   if(c.status === 'done') return '<div class="act"><p class="hint">완료 보고를 올렸습니다. 소장이 확인 후 민원인에게 회신합니다.</p></div>';
   if(c.status === 'replied') return '<div class="act"><p class="hint">민원인 회신까지 끝난 민원입니다.</p></div>';
   const dn = doneBy(c), others = assigneesOf(c).filter(id => id !== S.me && !dn.has(id));
-  const note = dn.has(S.me) ? `<p class="hint"><b>내 완료 보고는 올렸습니다.</b>${others.length ? ` 아직 보고하지 않은 담당자: ${esc(others.map(staffName).join(', '))}. 모두 완료하면 소장에게 회신 대기로 알려집니다.` : ''}</p>` : (assigneesOf(c).length > 1 ? `<p class="hint">함께 담당: ${esc(assigneesOf(c).filter(id => id !== S.me).map(staffName).join(', '))}. 모든 담당자가 완료 보고를 올리면 회신 대기가 됩니다.</p>` : '');
+  const note = receivedByMe ? `<p class="hint">내가 접수한 민원입니다. 담당: ${esc(namesOf(c))}. 내 보고를 올리면 소장에게 알려집니다.</p>` : dn.has(S.me) ? `<p class="hint"><b>내 완료 보고는 올렸습니다.</b>${others.length ? ` 아직 보고하지 않은 담당자: ${esc(others.map(staffName).join(', '))}. 모두 완료하면 소장에게 회신 대기로 알려집니다.` : ''}</p>` : (assigneesOf(c).length > 1 ? `<p class="hint">함께 담당: ${esc(assigneesOf(c).filter(id => id !== S.me).map(staffName).join(', '))}. 모든 담당자가 완료 보고를 올리면 회신 대기가 됩니다.</p>` : '');
   return `<div class="act">${note}<form id="f-report" class="sec">
     <h3>처리 결과 보고</h3>
     <label class="fld"><span>보고 내용</span><textarea id="rp-report" required placeholder="예) 1303호 욕실 배관 누수 확인. 배관 교체 완료, 1203호 천장 건조 후 도배는 세대에서 진행하기로 함"></textarea></label>
@@ -1914,7 +1913,7 @@ document.addEventListener('submit', e => {
     if(kind === 'done'){
       patch.rework = false;
       const had = doneBy(c); had.add(S.me);
-      waiting = assigneesOf(c).filter(id => !had.has(id));
+      waiting = assigneesOf(c).includes(S.me) ? assigneesOf(c).filter(id => !had.has(id)) : [];   // 담당이 아닌 접수자의 완료 보고는 바로 완료
       if(waiting.length) patch.status = 'progress';           // 다른 담당자의 완료 보고가 남아 있으면 아직 처리중
     }
     run(f, async () => store.update(c.id, patch, event(kind, Object.assign({staffId:S.me, text}, await uploadPending(c.id).then(p => p.length ? {photos:p} : {}))), `${kind === 'done' ? '완료 보고' : '진행 보고'}: ${c.location} (${staffName(S.me)})`), kind === 'done' ? (waiting.length ? `완료 보고를 올렸습니다. ${waiting.map(staffName).join(', ')}님의 보고를 기다립니다` : '완료 보고를 올렸습니다') : '진행 보고를 올렸습니다');
