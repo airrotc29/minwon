@@ -494,3 +494,12 @@ body.readonly #staff-picker{display:none!important}
 .seg{background:#FFF3B0;border:1px solid #E0B400}
 .seg button{color:#6B5800}
 .seg button[aria-pressed="true"]{background:#FFE15A;color:#141B2D;font-weight:700;box-shadow:0 0 0 1px #E0B400 inset,0 1px 2px rgba(0,0,0,.12)}
+
+/* 관리소장 = 노랑, 직원 = 흰색(고정). 선택된 쪽은 굵은 글씨와 남색 테두리로 표시 */
+.seg{background:var(--sunk);border:1px solid var(--line);gap:4px;padding:3px}
+.seg button{border:1px solid transparent;color:var(--ink);font-weight:500;box-shadow:none}
+#role-manager{background:#FFE15A}
+#role-staff{background:#fff}
+.seg button[aria-pressed="true"]{font-weight:700;color:#141B2D;border-color:var(--accent);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.seg button[aria-pressed="false"]{border-color:#E0B400}
+#role-staff[aria-pressed="false"]{border-color:var(--line)}
