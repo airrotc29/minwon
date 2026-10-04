@@ -458,7 +458,22 @@ function applyAccount(){
   if(st) S.me = st.id;
 }
 
-/* 홈 화면(바탕화면) 아이콘 안내: 직원 링크로 들어온 기기, 또는 설치 가능한 브라우저에서 */
+/* 홈 화면(바탕화면) 아이콘: 직원 링크로 들어온 기기, 또는 설치 가능한 브라우저에서 */
+const UA = navigator.userAgent;
+const inKakao = /KAKAOTALK/i.test(UA);
+const inAppBrowser = inKakao || /NAVER\(inapp|Instagram|FBAN|FBAV|Line\//i.test(UA);
+const isIOS = /iPhone|iPad|iPod/.test(UA);
+/* 설치 시 열릴 주소(start_url)에 직원 링크 토큰을 담기 위해 매니페스트를 그때그때 만든다 */
+function setManifest(){
+  if(location.protocol !== 'https:') return;
+  const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+  const m = {name:'선민종합관리 민원 처리부', short_name:'민원처리부', display:'standalone', background_color:'#EEF1F6', theme_color:'#1E3A7B', lang:'ko',
+    start_url:location.origin + location.pathname + (/^#staff=/.test(location.hash) ? location.hash : ''), scope:base,
+    icons:[{src:base + 'icon-192.png', sizes:'192x192', type:'image/png'}, {src:base + 'icon-512.png', sizes:'512x512', type:'image/png', purpose:'any maskable'}]};
+  const link = document.querySelector('link[rel=manifest]');
+  if(link) link.href = URL.createObjectURL(new Blob([JSON.stringify(m)], {type:'application/manifest+json'}));
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 let installEvt = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderInstall(); });
 window.addEventListener('appinstalled', () => { installEvt = null; lsSet('installDone', '1'); renderInstall(); });
@@ -469,11 +484,13 @@ function renderInstall(){
   const show = S.user && !standalone() && !lsGet('installDismiss') && !lsGet('installDone') && (linkStaff || installEvt);
   el.hidden = !show;
   if(!show) return;
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  const how = installEvt ? '<button type="button" class="btn primary" data-act="install">앱으로 설치</button>'
-    : ios ? '사파리 아래 <b>공유 버튼(⬆)</b> → <b>홈 화면에 추가</b>'
-    : '브라우저 메뉴(<b>⋮</b>) → <b>홈 화면에 추가</b>(또는 앱 설치)';
-  el.innerHTML = `<div><b>바탕화면에 아이콘 만들기</b><span class="hint">다음부터는 ${linkStaff ? '링크나 QR 없이 ' : ''}아이콘만 누르면 바로 열립니다.</span></div>
+  let how, sub = `다음부터는 ${linkStaff ? '링크나 QR 없이 ' : ''}아이콘만 누르면 바로 열립니다.`;
+  if(installEvt) how = '<button type="button" class="btn primary" data-act="install">바탕화면에 추가</button>';
+  else if(inKakao){ how = '<button type="button" class="btn primary" data-act="open-browser">크롬(기본 브라우저)에서 열기</button>'; sub = '카톡 안에서는 바탕화면에 넣을 수 없습니다. 버튼을 눌러 브라우저로 열면 바로 추가할 수 있습니다.'; }
+  else if(inAppBrowser){ how = ''; sub = '지금 앱 안의 브라우저에서 열려 있습니다. 오른쪽 위 메뉴에서 <b>다른 브라우저로 열기</b>(크롬·사파리)를 누른 뒤 바탕화면에 추가하세요.'; }
+  else if(isIOS) how = '사파리 아래 <b>공유 버튼(⬆)</b> → <b>홈 화면에 추가</b> → <b>추가</b>';
+  else how = '브라우저 메뉴(<b>⋮</b>) → <b>홈 화면에 추가</b>(또는 앱 설치) → <b>추가</b>';
+  el.innerHTML = `<div><b>바탕화면에 아이콘 만들기</b><span class="hint">${sub}</span></div>
     <div class="btns">${how}<button type="button" class="btn sm" data-act="install-later">나중에</button></div>`;
 }
 
@@ -1241,6 +1258,10 @@ document.addEventListener('click', e => {
   if(a === 'page-reload'){ location.reload(); }
   else if(a === 'install'){ if(installEvt){ installEvt.prompt(); installEvt.userChoice.then(() => { installEvt = null; renderInstall(); }); } }
   else if(a === 'install-later'){ lsSet('installDismiss', '1'); renderInstall(); }
+  else if(a === 'open-browser'){
+    // 카카오톡 안 브라우저 → 기기의 기본 브라우저(크롬·사파리)로 같은 주소 열기
+    location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+  }
   else if(a === 'hq'){ if(!S.hq) return; S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
   else if(a === 'hq-enter'){ if(!S.hq) return; enterSite(b.dataset.site); }
   else if(a === 'hq-print'){ if(S.hq) printHqReport(); }
@@ -1523,6 +1544,7 @@ async function boot(){
     return;
   }
   sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey);
+  setManifest();
   render();
   let session = ((await sb.auth.getSession()).data || {}).session;
   /* 직원 접속 링크(#staff=토큰): 익명 로그인 뒤 이 기기를 그 사업장 직원으로 등록 */

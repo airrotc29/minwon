@@ -2,6 +2,8 @@
   "name": "선민종합관리 민원 처리부",
   "short_name": "민원처리부",
   "description": "접수 · 지시 · 보고 · 회신",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#EEF1F6",
   "theme_color": "#1E3A7B",
