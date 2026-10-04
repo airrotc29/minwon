@@ -1725,6 +1725,13 @@ document.addEventListener('click', e => {
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
   else if(a === 'hq'){ if(!S.allSites) return; goHq(); }
+  else if(a === 'exit-cancel'){ hideExitAsk(); syncHistory(); }
+  else if(a === 'exit-app'){
+    hideExitAsk();
+    const before = location.href;
+    history.back();                                        // 앞 페이지가 있으면 그리로 나간다
+    setTimeout(() => { if(location.href === before && !document.hidden){ try{ window.close(); }catch(e){} setTimeout(() => { if(!document.hidden) toast('휴대폰의 뒤로 버튼을 한 번 더 누르거나 홈 버튼을 눌러 나가 주세요.'); }, 200); } }, 400);
+  }
   else if(a === 'call-open'){
     const id = b.dataset.id, c = S.db.complaints.find(x => x.id === id);
     callQueue = []; renderCall();
@@ -1883,20 +1890,32 @@ const isNarrow = () => matchMedia('(max-width:820px)').matches;
 function closeSheet(){ if(S.panel === 'hq') return; S.panel = null; S.selectedId = null; render(); }
 /* ---------- 브라우저 기록: 화면이 바뀔 때마다 한 칸 쌓아, 뒤로 가기가 항상 직전 화면으로 ----------
    화면 = 사업장 + 열린 패널(접수/설정/보고/본사) + 선택한 민원 + 역할 + 열린 팝업. 필터·검색어는 화면으로 치지 않는다. */
-let restoring = false;
+let restoring = false, exitAsking = null;
+function showExitAsk(){
+  exitAsking = JSON.stringify(viewSnap());
+  let el = document.getElementById('exitask');
+  if(!el){
+    el = document.createElement('div'); el.id = 'exitask'; el.setAttribute('role', 'alertdialog');
+    el.innerHTML = '<b>앱에서 나가시겠습니까?</b><span>뒤로 버튼을 한 번 더 누르면 나갑니다.</span><div class="btns"><button type="button" class="btn" data-act="exit-cancel">계속 쓰기</button><button type="button" class="btn primary" data-act="exit-app">나가기</button></div>';
+    document.body.appendChild(el);
+  }
+  el.hidden = false;
+}
+function hideExitAsk(){ exitAsking = null; const el = document.getElementById('exitask'); if(el) el.hidden = true; }
 const viewSnap = () => ({site:S.site, panel:S.panel, sel:S.selectedId, role:S.role, popup:$('#popup').open ? ($('#popup').dataset.k || null) : null});
 function syncHistory(){
   if(restoring || (SERVER && !S.user)) return;
   const v = viewSnap(), cur = history.state && history.state.view;
+  if(exitAsking){ if(JSON.stringify(v) === exitAsking) return; hideExitAsk(); }   // 나가기 확인 중에는 화면이 바뀔 때만 다시 기록
   if(cur && JSON.stringify(cur) === JSON.stringify(v)) return;
   // 맨 아래에는 '나가기 확인'용 칸을 하나 깔아 두어, 첫 화면에서 뒤로 가기를 누르면 바로 나가지 않고 묻는다
   try{ if(cur) history.pushState({view:v}, ''); else { history.replaceState({guard:1}, ''); history.pushState({view:v}, ''); } }catch(e){}
 }
 window.addEventListener('popstate', e => {
   if(e.state && e.state.guard){
-    // 첫 화면에서 뒤로 가기: 확인을 눌러야 앱에서 나간다
-    if(confirm('앱에서 나가시겠습니까?')){ history.back(); }
-    else { try{ history.pushState({view:viewSnap()}, ''); }catch(err){} }
+    // 첫 화면에서 뒤로 가기: 바로 나가지 않고 묻는다. 여기서 한 번 더 뒤로 가기를 누르면 그대로 나가진다
+    // (휴대폰의 확인창·대화상자는 뒤로 가기에 막히거나 닫혀 버려 쓰지 않는다)
+    showExitAsk();
     return;
   }
   const v = e.state && e.state.view; if(!v || (SERVER && !S.user)) return;

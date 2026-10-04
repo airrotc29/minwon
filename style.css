@@ -567,3 +567,12 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 .chk input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
 /* 반짝이는 칩도 선택 상태가 보이도록 남색 테두리 */
 .chip.wait[aria-pressed="true"]{outline:3px solid var(--accent);outline-offset:1px}
+
+/* 첫 화면에서 뒤로 가기: 나가기 확인 띠(대화상자 아님 → 한 번 더 뒤로 가기를 누르면 그대로 나가진다) */
+#exitask{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:90;background:#141B2D;color:#fff;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;box-shadow:0 10px 30px rgba(0,0,0,.35);max-width:520px;margin:0 auto}
+#exitask[hidden]{display:none}
+#exitask b{font-size:16px}
+#exitask span{font-size:13.5px;color:#C9D4EC}
+#exitask .btns{justify-content:flex-end;margin-top:8px}
+#exitask .btn{background:transparent;color:#fff;border-color:rgba(255,255,255,.35)}
+#exitask .btn.primary{background:#FFE15A;color:#141B2D;border-color:#FFE15A;font-weight:700}
