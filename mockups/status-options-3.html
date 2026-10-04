@@ -1,0 +1,65 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--accent:#1E3A7B;--ink:#141B2D;--muted:#556079;--line:#D3D9E5;--bg:#EEF1F6;--y:#FFE15A;--yb:#E0B400;--red:#D01E12}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"IBM Plex Sans KR","Noto Sans KR",sans-serif;color:var(--ink)}
+.opt{width:390px;padding:16px 14px 18px;background:var(--bg)}
+.tag{display:inline-block;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border-radius:999px;padding:3px 11px;margin-bottom:6px}
+h2{margin:2px 0 12px;font-size:17px}.sub{font-size:12.5px;color:var(--muted);margin:-6px 0 12px}
+.box{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px}
+/* 7 원형 게이지 */
+.gw{display:flex;align-items:center;gap:14px}
+.gw svg{flex:none}
+.acts{flex:1;display:flex;flex-direction:column;gap:8px}
+.act{background:var(--y);border:1.5px solid var(--yb);border-radius:12px;padding:9px 12px;display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:14px}
+.act b{color:var(--red);font-size:22px}
+.gl{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:10px;font-size:12px;color:var(--muted)}.gl i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+/* 8 신호등 */
+.lights{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.lt{border-radius:14px;padding:12px 10px;color:#fff;position:relative}
+.lt b{display:block;font-size:30px;line-height:1.1}.lt span{font-weight:700;font-size:14px}.lt small{display:block;font-size:11.5px;opacity:.9;margin-top:4px;line-height:1.35}
+.r{background:#D9382B}.yy{background:#E0A100}.g{background:#1F9D6B}
+/* 9 브리핑 */
+.brief{font-size:15.5px;line-height:1.85}
+.brief a{font-weight:700;text-decoration:none;border-radius:6px;padding:1px 6px;white-space:nowrap}
+.brief .hot{background:var(--y);color:var(--red);box-shadow:inset 0 0 0 1px var(--yb)}
+.brief .cool{background:#E3E8F1;color:var(--accent)}
+.brief .ok{background:#DDF3E9;color:#14724E}
+.date{font-size:12.5px;color:var(--muted);margin-bottom:4px}
+</style></head><body>
+
+<section class="opt" id="g">
+  <span class="tag">대안 7</span><h2>원형 게이지형</h2><p class="sub">미결이 얼마나 남았는지 원 하나로. 옆에는 할 일 버튼 2개만.</p>
+  <div class="box"><div class="gw">
+    <svg width="132" height="132" viewBox="0 0 132 132">
+      <g transform="rotate(-90 66 66)" fill="none" stroke-width="16">
+        <circle cx="66" cy="66" r="54" stroke="#E3E8F1"/>
+        <circle cx="66" cy="66" r="54" stroke="#2a78d6" stroke-dasharray="28.3 311" stroke-dashoffset="0"/>
+        <circle cx="66" cy="66" r="54" stroke="#eda100" stroke-dasharray="56.5 311" stroke-dashoffset="-29.3"/>
+        <circle cx="66" cy="66" r="54" stroke="#d9382b" stroke-dasharray="84.8 311" stroke-dashoffset="-86.8"/>
+        <circle cx="66" cy="66" r="54" stroke="#1baf7a" stroke-dasharray="28.3 311" stroke-dashoffset="-172.6"/>
+      </g>
+      <text x="66" y="62" text-anchor="middle" font-size="30" font-weight="700" fill="#141B2D">7</text>
+      <text x="66" y="84" text-anchor="middle" font-size="12" fill="#556079">미결 / 12건</text>
+    </svg>
+    <div class="acts"><div class="act">지시할 것 <b>1</b></div><div class="act">회신할 것 <b>1</b></div></div>
+  </div>
+  <div class="gl"><span><i style="background:#2a78d6"></i>지시 대기 1</span><span><i style="background:#eda100"></i>지시됨 2</span><span><i style="background:#d9382b"></i>처리중 3</span><span><i style="background:#1baf7a"></i>회신 대기 1</span><span><i style="background:#E3E8F1"></i>완료 5</span></div></div>
+</section>
+
+<section class="opt" id="h">
+  <span class="tag">대안 8</span><h2>신호등형</h2><p class="sub">급한 정도로 3색. 빨강 = 지금 할 일·기한 초과, 노랑 = 진행 중, 초록 = 끝남.</p>
+  <div class="lights">
+    <div class="lt r"><b>2</b><span>지금 처리</span><small>지시할 것 1<br>회신할 것 1<br>기한 초과 0</small></div>
+    <div class="lt yy"><b>5</b><span>진행 중</span><small>지시됨 2<br>처리중 3</small></div>
+    <div class="lt g"><b>5</b><span>완료</span><small>회신완료 5<br>전체 12</small></div>
+  </div>
+</section>
+
+<section class="opt" id="i">
+  <span class="tag">대안 9</span><h2>한 줄 브리핑형</h2><p class="sub">숫자 칸 대신 문장으로 요약. 강조된 말을 누르면 그 목록.</p>
+  <div class="box">
+    <div class="date">10월 4일(일) 현재</div>
+    <div class="brief">새로 <a class="hot">지시할 민원 1건</a>, 민원인에게 <a class="hot">회신할 민원 1건</a>이 있습니다. 직원이 <a class="cool">처리 중인 민원 5건</a>, 이번 달 <a class="ok">완료 5건</a>입니다.</div>
+  </div>
+</section>
+</body></html>
