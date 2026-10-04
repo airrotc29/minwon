@@ -1563,7 +1563,7 @@ function staffActions(c, mine){
   if(c.status === 'replied') return '<div class="act"><p class="hint">민원인 회신까지 끝난 민원입니다.</p></div>';
   const dn = doneBy(c), others = assigneesOf(c).filter(id => id !== S.me && !dn.has(id));
   const note = receivedByMe ? `<p class="hint">내가 접수한 민원입니다. 담당: ${esc(namesOf(c))}. 내 보고를 올리면 소장에게 알려집니다.</p>` : dn.has(S.me) ? `<p class="hint"><b>내 완료 보고는 올렸습니다.</b>${others.length ? ` 아직 보고하지 않은 담당자: ${esc(others.map(staffName).join(', '))}. 모두 완료하면 소장에게 회신 대기로 알려집니다.` : ''}</p>` : (assigneesOf(c).length > 1 ? `<p class="hint">함께 담당: ${esc(assigneesOf(c).filter(id => id !== S.me).map(staffName).join(', '))}. 모든 담당자가 완료 보고를 올리면 회신 대기가 됩니다.</p>` : '');
-  return `<div class="act">${note}<form id="f-report" class="sec">
+  return `<div class="act callout k-todo">${note}<form id="f-report" class="sec">
     <h3>처리 결과 보고</h3>
     <label class="fld"><span>보고 내용</span><textarea id="rp-report" required placeholder="예) 1303호 욕실 배관 누수 확인. 배관 교체 완료, 1203호 천장 건조 후 도배는 세대에서 진행하기로 함"></textarea></label>
     ${photoPicker('처리 전·후 사진')}

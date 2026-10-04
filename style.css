@@ -654,7 +654,7 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 .todo-card.spark b{animation:num-soft 1s ease-in-out infinite}
 @keyframes num-soft{0%,100%{opacity:1}50%{opacity:.45}}
 .todo-card.spark::after{background:linear-gradient(100deg,transparent,rgba(255,255,255,.7),transparent)}
-.act.callout.k-received,.act.callout.k-done{animation:k-callout 1.2s ease-in-out infinite;border-color:var(--k-bd)}
+.act.callout.k-received,.act.callout.k-done,.act.callout.k-todo{animation:k-callout 1.2s ease-in-out infinite;border-color:var(--k-bd)}
 @keyframes k-callout{0%,100%{background:var(--k-bg1);border-color:var(--k-bd);box-shadow:0 0 0 0 transparent}50%{background:var(--k-bg2);border-color:var(--k-bd2);box-shadow:0 0 14px 3px var(--k-glow)}}
 .act.callout.k-received .hint,.act.callout.k-done .hint,.act.callout.k-received legend,.act.callout.k-done legend,.act.callout.k-received .fld > span,.act.callout.k-done .fld > span,.act.callout.k-received label.check,.act.callout.k-done label.check{color:var(--k-ink)}
 .act.callout.k-received textarea,.act.callout.k-received input[type=text],.act.callout.k-received input[type=date],.act.callout.k-received .chk span,.act.callout.k-received .btn:not(.primary):not(.kakao){border-color:#9DBFEA}
@@ -671,3 +671,5 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 .stab.hot b{animation:num-soft 1s ease-in-out infinite}
 @keyframes stab-glow{0%,100%{background:#FFF3B0;box-shadow:inset 0 0 0 1.5px #E0B400}50%{background:#FFE15A;box-shadow:inset 0 0 0 1.5px #D01E12,0 0 12px 2px rgba(255,200,0,.6)}}
 .stab.hot,.stab.hot span{color:#141B2D}
+.act.callout.k-todo .hint,.act.callout.k-todo .fld > span,.act.callout.k-todo .hint b{color:#4A4020}
+.act.callout.k-todo textarea,.act.callout.k-todo .btn:not(.primary):not(.kakao){border-color:#C9B65A}
