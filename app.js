@@ -1049,21 +1049,21 @@ function chartTrend(d, w){
   let defs = gradDefs('vt', true);
   for(let v = 0; v <= ymax; v += step) grid += `<line x1="${left}" x2="${w - right}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="vz-grid${v ? '' : ' base'}"${v ? ' stroke-dasharray="3 4"' : ''}/><text x="${left - 6}" y="${Y(v).toFixed(1)}" class="vz-ax" text-anchor="end" dominant-baseline="central">${v}</text>`;
   const peak = [Math.max(...t.map(r => r.recv)), Math.max(...t.map(r => r.closed))];
-  const SER = [['recv', '접수'], ['closed', '처리 완료']];
+  const SER = [['recv', '접수', 0], ['closed', '처리 완료', 2]];   // 접수는 파랑, 처리 완료는 녹색
   let bars = '';
   t.forEach((r, i) => {
     const cx = left + gw * i + gw / 2, last = i === t.length - 1;
     let g = `<rect x="${(left + gw * i).toFixed(1)}" y="${top - 10}" width="${gw.toFixed(1)}" height="${ph + 10}" fill="transparent"/>`;
-    SER.forEach(([k, name], s) => {
+    SER.forEach(([k, name, col], s) => {
       const v = r[k], x = cx + (s ? 2 : -bw - 2), bh = v ? Math.max(3, v / ymax * ph) : 0;
-      if(bh) g += `<path d="${barPath(x.toFixed(1) * 1, (Y(0) - bh).toFixed(1) * 1, bw, bh.toFixed(1) * 1, 'top')}" fill="${gfill('vt', s)}"/>`;
+      if(bh) g += `<path d="${barPath(x.toFixed(1) * 1, (Y(0) - bh).toFixed(1) * 1, bw, bh.toFixed(1) * 1, 'top')}" fill="${gfill('vt', col)}"/>`;
       // 값 표시는 마지막 달과 각 계열의 최고치만(그래프를 숫자로 뒤덮지 않도록)
       if(v && (last || (v === peak[s] && v > 0))) g += `<text x="${(x + bw / 2).toFixed(1)}" y="${(Y(0) - bh - 4).toFixed(1)}" class="vz-val" text-anchor="middle">${v}</text>`;
     });
     g += `<text x="${cx.toFixed(1)}" y="${h - 6}" class="vz-ax" text-anchor="middle">${shortMonth(r.ym)}</text>`;
     bars += `<g data-tip="${esc(`${monthLabel(r.ym)} · 접수 ${r.recv}건 · 처리 완료 ${r.closed}건`)}">${g}</g>`;
   });
-  return legendHTML(SER.map(([, l], i) => [l, i])) +
+  return legendHTML(SER.map(([, l, col]) => [l, col])) +
     `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="최근 6개월 월별 접수와 처리 완료 건수 막대 그래프"><defs>${defs}</defs>${grid}${bars}</svg>
     <details class="viz-table"><summary>표로 보기</summary><table class="rtable"><thead><tr><th>월</th>${t.map(r => `<th class="n">${shortMonth(r.ym)}</th>`).join('')}</tr></thead><tbody>
       ${SER.map(([k, name]) => `<tr><td>${name}</td>${t.map(r => `<td class="n">${r[k]}</td>`).join('')}</tr>`).join('')}</tbody></table></details>`;
