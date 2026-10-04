@@ -489,3 +489,8 @@ body.readonly #staff-picker{display:none!important}
 .picker{background:#FFE15A;border:1px solid #E0B400;border-radius:10px;padding:5px 6px 5px 12px;color:#4A3B00;font-weight:600}
 .picker select{background:#FFF3B0;color:#141B2D;border:1px solid #E0B400;font-weight:600;min-width:150px}
 .picker select:focus-visible{outline:2px solid #B88A00;outline-offset:1px}
+
+/* 관리소장 / 직원 전환 상자: 노란 계열 */
+.seg{background:#FFF3B0;border:1px solid #E0B400}
+.seg button{color:#6B5800}
+.seg button[aria-pressed="true"]{background:#FFE15A;color:#141B2D;font-weight:700;box-shadow:0 0 0 1px #E0B400 inset,0 1px 2px rgba(0,0,0,.12)}
