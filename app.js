@@ -524,6 +524,12 @@ function render(){
   document.body.classList.toggle('no-access', noAccess);
   if(noAccess) return;
   const hqPanel = S.panel === 'hq';
+  /* 휴대폰: 민원을 고르거나 접수·설정·보고 화면을 열면 전체 화면 시트로 띄우고, 뒤로 가기로 닫는다 */
+  const sheet = isNarrow() && !hqPanel && !!(S.panel || S.selectedId);
+  if(sheet && !document.body.classList.contains('sheet')){
+    try{ if(!(history.state && history.state.sheet)) history.pushState(Object.assign({}, history.state || {}, {sheet:1}), ''); }catch(e){}
+  }
+  document.body.classList.toggle('sheet', sheet);
   $('#hq-tools').hidden = !S.hq || hqPanel;
   document.body.classList.toggle('hq-mode', !!S.hq && !hqPanel);
   tipEl.hidden = true;
@@ -617,7 +623,9 @@ function renderDetail(){
     el.querySelectorAll('details[id]').forEach(d => { if(d.open) openDet.push(d.id); });
     if(el.contains(document.activeElement)) focusId = document.activeElement.id;
   }
-  el.innerHTML = S.panel === 'new' ? newForm() : S.panel === 'settings' ? settingsView() : S.panel === 'report' ? reportView() : S.panel === 'hq' ? hqView() : complaintView();
+  const sheetBar = document.body.classList.contains('sheet') ? `<div class="sheet-bar"><button type="button" class="btn" data-act="close-detail">← 목록으로</button><span>${S.panel === 'new' ? '민원 접수' : S.panel === 'settings' ? '직원·설정' : S.panel === 'report' ? '월간 보고' : '민원 처리'}</span></div>` : '';
+  el.innerHTML = sheetBar + (S.panel === 'new' ? newForm() : S.panel === 'settings' ? settingsView() : S.panel === 'report' ? reportView() : S.panel === 'hq' ? hqView() : complaintView());
+  if(sheetBar && key !== lastKey) el.scrollTop = 0;
   for(const id in saved){ const i = document.getElementById(id); if(!i) continue; if(i.type === 'checkbox') i.checked = saved[id]; else i.value = saved[id]; }
   openDet.forEach(id => { const d = document.getElementById(id); if(d) d.open = true; });
   if(focusId){ const f = document.getElementById(focusId); if(f) f.focus(); }
@@ -939,11 +947,11 @@ function hqView(){
   <header class="hq-hero">
     <div class="hq-ht"><span class="no">본사 담당자 전용 · ${esc(ymd(today))} 기준</span><h2>본사 · 사업장 현황</h2><p>운영 중인 ${active.length}개 사업장의 민원 처리 상태를 한눈에 봅니다.</p></div>
     <div class="hq-kpis">
-      <div><b>${active.length}</b><span>운영 사업장</span></div>
-      <div><b>${tot.month}</b><span>이달 접수</span><small>완료 ${tot.monthClosed}건</small></div>
-      <div><b>${tot.open}</b><span>미결</span></div>
-      <div class="${tot.done ? 'attn' : ''}"><b>${tot.done}</b><span>회신 대기</span></div>
-      <div class="${tot.overdue ? 'bad' : ''}"><b>${tot.overdue}</b><span>기한 초과</span></div>
+      <button type="button" data-act="hq-kpi" data-k="sites"><b>${active.length}</b><span>운영 사업장</span></button>
+      <button type="button" data-act="hq-kpi" data-k="month"><b>${tot.month}</b><span>이달 접수</span><small>완료 ${tot.monthClosed}건</small></button>
+      <button type="button" data-act="hq-kpi" data-k="open"><b>${tot.open}</b><span>미결</span></button>
+      <button type="button" class="${tot.done ? 'attn' : ''}" data-act="hq-kpi" data-k="done"><b>${tot.done}</b><span>회신 대기</span></button>
+      <button type="button" class="${tot.overdue ? 'bad' : ''}" data-act="hq-kpi" data-k="overdue"><b>${tot.overdue}</b><span>기한 초과</span></button>
     </div>
   </header>
   ${card('bars', '사업장별 미결 현황', '현재 미결 건수를 처리 단계별로 나누어 보여 줍니다. 사업장 줄을 누르면 그 사업장 화면으로 들어갑니다.', '<div class="chart" data-chart="open"></div>', stat(tot.open, '미결 합계'))}
@@ -1014,11 +1022,12 @@ function hqChartData(ym){
 function chartOpen(d, w){
   const rows = d.open.filter(r => r.total);
   if(!rows.length) return '<p class="hint">미결 민원이 없습니다. 모든 사업장이 회신까지 마쳤습니다.</p>';
-  const lw = Math.min(170, Math.round(w * 0.3)), bh = 26, gap = 12, right = 44, pw = w - lw - right;
-  const max = Math.max(1, ...rows.map(r => r.total)), h = rows.length * (bh + gap);
+  // 좁은 화면(휴대폰)에서는 사업장 이름을 막대 위 줄에 두고 막대를 가로로 꽉 채운다
+  const narrow = w < 520, lw = narrow ? 0 : Math.min(170, Math.round(w * 0.3)), bh = narrow ? 24 : 26, gap = narrow ? 10 : 12, nameH = narrow ? 20 : 0, right = 44, pw = w - lw - right;
+  const rowH = bh + gap + nameH, max = Math.max(1, ...rows.map(r => r.total)), h = rows.length * rowH;
   let defs = gradDefs('vo', false), body = '';
   rows.forEach((r, i) => {
-    const y = i * (bh + gap) + gap / 2, tw = Math.max(6, r.total / max * pw), id = `vz-clip-${i}`;
+    const y = i * rowH + gap / 2 + nameH, tw = Math.max(6, r.total / max * pw), id = `vz-clip-${i}`;
     defs += `<clipPath id="${id}"><path d="${barPath(lw, y, tw, bh, 'right')}"/></clipPath>`;
     let x = lw, segs = `<rect x="${lw}" y="${y}" width="${pw}" height="${bh}" rx="4" class="vz-track"/>`;
     r.v.forEach((v, k) => {
@@ -1029,8 +1038,8 @@ function chartOpen(d, w){
       x += sw;
     });
     body += `<g class="vz-row" data-act="hq-enter" data-site="${esc(r.id)}" tabindex="0" role="link" aria-label="${esc(r.name)} 미결 ${r.total}건, 누르면 사업장 화면으로 이동">
-      <rect x="0" y="${y - gap / 2}" width="${w}" height="${bh + gap}" fill="transparent"/>
-      <text x="${lw - 8}" y="${y + bh / 2}" class="vz-lab" text-anchor="end" dominant-baseline="central">${esc(cut(r.name, lw - 12))}</text>
+      <rect x="0" y="${y - gap / 2 - nameH}" width="${w}" height="${rowH}" fill="transparent"/>
+      ${narrow ? `<text x="0" y="${y - 6}" class="vz-lab">${esc(cut(r.name, w - 60))}</text>` : `<text x="${lw - 8}" y="${y + bh / 2}" class="vz-lab" text-anchor="end" dominant-baseline="central">${esc(cut(r.name, lw - 12))}</text>`}
       ${segs.slice(0, segs.indexOf('/>') + 2)}<g clip-path="url(#${id})">${segs.slice(segs.indexOf('/>') + 2)}</g>
       <text x="${(lw + tw + 6).toFixed(1)}" y="${y + bh / 2}" class="vz-val" dominant-baseline="central">${r.total}</text></g>`;
   });
@@ -1115,7 +1124,42 @@ function moveTip(e){
 document.addEventListener('pointermove', moveTip);
 document.addEventListener('pointerdown', moveTip);
 document.addEventListener('scroll', () => { tipEl.hidden = true; }, true);
+$('#popup').addEventListener('click', e => { if(e.target === e.currentTarget) e.currentTarget.close(); });
 
+/* 본사 숫자 타일을 누르면 뜨는 간단한 표 팝업 */
+const KPI_DEF = {
+  sites:{title:'운영 사업장'}, month:{title:'이달 접수'}, open:{title:'미결 민원'}, done:{title:'회신 대기 (직원 완료 보고 올라옴)'}, overdue:{title:'기한 초과'}
+};
+function hqKpiList(k){
+  const active = S.db.sites.filter(x => !x.archived), ids = new Set(active.map(x => x.id));
+  const all = S.db.complaints.filter(c => ids.has(siteOf(c)));
+  const ym = ymd(new Date()).slice(0, 7);
+  if(k === 'month') return all.filter(c => (c.createdAt || '').slice(0, 7) === ym);
+  if(k === 'open') return all.filter(c => c.status !== 'replied');
+  if(k === 'done') return all.filter(c => c.status === 'done');
+  if(k === 'overdue') return all.filter(isOverdue);
+  return [];
+}
+function openKpiPopup(k){
+  const d = KPI_DEF[k]; if(!d) return;
+  let body = '';
+  if(k === 'sites'){
+    const rows = S.db.sites.filter(x => !x.archived).sort(bySiteName).map(st => { const kp = siteKpis(st.id); return `<tr class="click" data-act="hq-enter" data-site="${esc(st.id)}"><td><b>${esc(st.name)}</b></td><td class="n">${kp.open}</td><td class="n${kp.done ? ' warn' : ''}">${kp.done}</td><td class="n${kp.overdue ? ' warn' : ''}">${kp.overdue}</td><td class="n">${kp.month}</td><td class="n">${kp.staff}</td></tr>`; }).join('');
+    body = rows ? `<table class="rtable keep"><thead><tr><th>사업장</th><th>미결</th><th>회신 대기</th><th>기한 초과</th><th>이달 접수</th><th>직원</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="hint">운영 중인 사업장이 없습니다.</p>';
+  }else{
+    const list = hqKpiList(k).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    const rows = list.map(c => { const st = ST[c.status]; return `<tr class="click" data-act="hq-enter" data-site="${esc(siteOf(c))}" data-id="${esc(c.id)}"><td>${esc(siteName(siteOf(c)))}</td><td>${esc([c.dong ? c.dong + '동' : '', c.ho ? c.ho + '호' : '', c.location].filter(Boolean).join(' '))}</td><td class="t">${c.urgent ? '<span class="tag">긴급</span> ' : ''}${esc(c.title || '')}</td><td>${esc(c.category || '')}</td><td><span class="pill" style="--c:var(--st-${esc(c.status)})">${esc(st ? st.chip : c.status)}</span></td><td>${esc(c.assignee ? staffName(c.assignee) : '미배정')}</td><td class="nowrap">${k === 'overdue' ? esc(c.due || '') : fmt(c.createdAt).slice(0, 9)}</td></tr>`; }).join('');
+    // 휴대폰에서는 표 대신 카드 목록(CSS로 화면 폭에 따라 하나만 보임)
+    const cards = list.map(c => { const st = ST[c.status]; return `<li class="pc" data-act="hq-enter" data-site="${esc(siteOf(c))}" data-id="${esc(c.id)}" tabindex="0">
+      <div class="pc-l1"><span class="pc-site">${esc(siteName(siteOf(c)))}</span><span class="pill" style="--c:var(--st-${esc(c.status)})">${esc(st ? st.chip : c.status)}</span></div>
+      <div class="pc-t">${c.urgent ? '<span class="tag">긴급</span> ' : ''}${esc(c.title || '')}</div>
+      <div class="pc-l3">${esc([c.dong ? c.dong + '동' : '', c.ho ? c.ho + '호' : '', c.location].filter(Boolean).join(' '))} · ${esc(c.category || '')} · ${esc(c.assignee ? staffName(c.assignee) : '미배정')} · ${k === 'overdue' ? '기한 ' + esc(c.due || '') : fmt(c.createdAt).slice(0, 9)}</div></li>`; }).join('');
+    body = rows ? `<table class="rtable"><thead><tr><th>사업장</th><th>동·호</th><th>제목</th><th>분류</th><th>상태</th><th>담당</th><th>${k === 'overdue' ? '처리 기한' : '접수일'}</th></tr></thead><tbody>${rows}</tbody></table><ul class="popup-list">${cards}</ul>` : '<p class="hint">해당하는 민원이 없습니다.</p>';
+  }
+  $('#popup-title').textContent = `${d.title} · ${k === 'sites' ? S.db.sites.filter(x => !x.archived).length + '곳' : hqKpiList(k).length + '건'}`;
+  $('#popup-body').innerHTML = body + (k === 'sites' ? '<p class="hint">줄을 누르면 그 사업장 화면으로 들어갑니다.</p>' : '<p class="hint">줄을 누르면 그 사업장의 해당 민원이 열립니다.</p>');
+  const dlg = $('#popup'); if(!dlg.open) dlg.showModal(); dlg.scrollTop = 0;
+}
 function printHqReport(){
   $('#print-area').innerHTML = hqReportHTML(S.hqMonth);
   window.print();
@@ -1464,7 +1508,10 @@ document.addEventListener('click', e => {
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
   else if(a === 'hq'){ if(!S.hq) return; if(history.state && history.state.site) history.back(); else goHq(); }
-  else if(a === 'hq-enter'){ if(!S.hq) return; enterSite(b.dataset.site); }
+  else if(a === 'close-detail'){ if(history.state && history.state.sheet) history.back(); else closeSheet(); }
+  else if(a === 'hq-enter'){ if(!S.hq) return; if($('#popup').open) $('#popup').close(); enterSite(b.dataset.site, false, b.dataset.id || null); }
+  else if(a === 'hq-kpi'){ if(!S.hq) return; openKpiPopup(b.dataset.k); }
+  else if(a === 'popup-close'){ $('#popup').close(); }
   else if(a === 'hq-print'){ if(S.hq) printHqReport(); }
   else if(a === 'hq-archive'){
     if(!S.hq) return;
@@ -1597,7 +1644,7 @@ document.addEventListener('change', async e => {
 });
 /* 본사: 사업장 바꾸기 */
 /* 본사 담당자가 사업장에 들어가면 브라우저 기록을 한 칸 쌓아, 휴대폰 뒤로 가기 버튼으로 본사 화면에 돌아올 수 있게 한다 */
-function enterSite(id, fromHistory){
+function enterSite(id, fromHistory, selectId){
   if(!S.db.sites.some(x => x.id === id)) return;
   if(S.hq && !fromHistory){
     try{ if(history.state && history.state.site) history.replaceState({site:id}, ''); else history.pushState({site:id}, ''); }catch(e){}
@@ -1605,14 +1652,23 @@ function enterSite(id, fromHistory){
   S.site = id; lsSet('site', id);
   S.panel = null; S.selectedId = null; S.filter = 'open'; S.q = '';
   S.role = 'manager'; lsSet('role', 'manager');
-  deriveSite(); resetDetail(); window.scrollTo({top:0});
+  deriveSite();
+  if(selectId && S.complaints.some(c => c.id === selectId)){ S.selectedId = selectId; const c = find(selectId); if(c && c.status === 'replied') S.filter = 'all'; }
+  resetDetail(); window.scrollTo({top:0});
 }
 $('#site-select').addEventListener('change', e => { if(!S.hq) return; if(e.target.value) enterSite(e.target.value); else if(history.state && history.state.site) history.back(); else goHq(); });
 function goHq(){ S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
+const isNarrow = () => matchMedia('(max-width:820px)').matches;
+function closeSheet(){ if(S.panel === 'hq') return; S.panel = null; S.selectedId = null; render(); }
 window.addEventListener('popstate', e => {
-  if(!S.hq) return;
-  if(e.state && e.state.site) enterSite(e.state.site, true); else goHq();
+  const st = e.state || {};
+  if(S.hq){
+    if(st.site){ if(S.panel === 'hq' || S.site !== st.site) enterSite(st.site, true); }
+    else { goHq(); return; }
+  }
+  if(!st.sheet && document.body.classList.contains('sheet')) closeSheet();
 });
+window.addEventListener('resize', () => { if(document.body.classList.contains('sheet') !== (isNarrow() && S.panel !== 'hq' && !!(S.panel || S.selectedId))) render(); });
 try{ if(history.state && history.state.site) history.replaceState(null, ''); }catch(e){}   // 새로 고침 뒤에는 본사 화면부터
 document.addEventListener('change', e => { if(e.target.id === 'hq-month' && e.target.value){ S.hqMonth = e.target.value; resetDetail(); } });
 $('#me-select').addEventListener('change', e => { S.me = e.target.value || null; lsSet('meStaff', S.me || ''); S.selectedId = null; render(); });
