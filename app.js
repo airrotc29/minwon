@@ -919,48 +919,40 @@ function hqReportHTML(ym){
 function hqView(){
   const ym = S.hqMonth || (S.hqMonth = ymd(new Date()).slice(0, 7));
   const sites = S.db.sites, active = sites.filter(x => !x.archived);
-  const tot = active.reduce((t, st) => { const k = siteKpis(st.id); t.open += k.open; t.done += k.done; t.overdue += k.overdue; t.month += k.month; return t; }, {open:0, done:0, overdue:0, month:0});
+  const tot = active.reduce((t, st) => { const k = siteKpis(st.id); t.open += k.open; t.done += k.done; t.overdue += k.overdue; t.month += k.month; t.monthClosed += k.monthClosed; return t; }, {open:0, done:0, overdue:0, month:0, monthClosed:0});
   const siteOpts = sel => active.map(x => `<option value="${esc(x.id)}"${x.id === sel ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
-  return `<div class="d-head"><span class="no">본사 담당자 전용</span><h2>본사 · 사업장 현황</h2></div>
-  <div class="r-kpis hq-kpis">
-    <div><b>${active.length}</b><span>운영 사업장</span></div>
-    <div><b>${tot.month}</b><span>이달 접수</span></div>
-    <div><b>${tot.open}</b><span>미결</span></div>
-    <div class="${tot.done ? 'attn' : ''}"><b>${tot.done}</b><span>회신 대기</span></div>
-    <div class="${tot.overdue ? 'attn' : ''}"><b>${tot.overdue}</b><span>기한 초과</span></div>
-  </div>
-  <div class="sec">
-    <h3>사업장별 미결 현황 <span class="hint">(현재 기준)</span></h3>
-    <div class="chart" data-chart="open" aria-busy="true"></div>
-  </div>
+  const today = new Date();
+  const card = (title, sub, body, extra = '') => `<section class="hq-card${extra}"><header class="hq-ch"><h3>${title}</h3>${sub ? `<p class="hint">${sub}</p>` : ''}</header>${body}</section>`;
+  return `<div class="hq">
+  <header class="hq-hero">
+    <div class="hq-ht"><span class="no">본사 담당자 전용 · ${esc(ymd(today))} 기준</span><h2>본사 · 사업장 현황</h2><p>운영 중인 ${active.length}개 사업장의 민원 처리 상태를 한눈에 봅니다.</p></div>
+    <div class="hq-kpis">
+      <div><b>${active.length}</b><span>운영 사업장</span></div>
+      <div><b>${tot.month}</b><span>이달 접수</span><small>완료 ${tot.monthClosed}건</small></div>
+      <div><b>${tot.open}</b><span>미결</span></div>
+      <div class="${tot.done ? 'attn' : ''}"><b>${tot.done}</b><span>회신 대기</span></div>
+      <div class="${tot.overdue ? 'bad' : ''}"><b>${tot.overdue}</b><span>기한 초과</span></div>
+    </div>
+  </header>
+  ${card('사업장별 미결 현황', '현재 미결 건수를 처리 단계별로 나누어 보여 줍니다. 사업장 줄을 누르면 그 사업장 화면으로 들어갑니다.', '<div class="chart" data-chart="open"></div>')}
   <div class="charts2">
-    <div class="sec"><h3>최근 6개월 접수·처리 완료 <span class="hint">(${esc(monthLabel(ym))}까지)</span></h3><div class="chart" data-chart="trend"></div></div>
-    <div class="sec"><h3>${esc(monthLabel(ym))} 분류별 접수</h3><div class="chart" data-chart="cat"></div></div>
+    ${card('최근 6개월 접수 · 처리 완료', `${esc(monthLabel(ym))}까지 월별 추이`, '<div class="chart" data-chart="trend"></div>')}
+    ${card(`${esc(monthLabel(ym))} 분류별 접수`, '전체 사업장 합계, 많은 순', '<div class="chart" data-chart="cat"></div>')}
   </div>
-  <div class="sec">
-    <h3>사업장별 현황 <span class="hint">(사업장을 누르면 그 사업장 화면으로 들어갑니다)</span></h3>
-    ${active.length ? `<div class="tscroll"><table class="rtable hq-table"><thead><tr><th>사업장</th><th>미결</th><th>지시 대기</th><th>회신 대기</th><th>기한 초과</th><th>긴급</th><th>이달 접수</th><th>이달 완료</th><th>직원</th><th>최근 변동</th></tr></thead><tbody>
+  ${card('사업장별 현황', '사업장을 누르면 그 사업장 화면으로 들어갑니다.', active.length ? `<div class="tscroll"><table class="rtable hq-table"><thead><tr><th>사업장</th><th>미결</th><th>지시 대기</th><th>회신 대기</th><th>기한 초과</th><th>긴급</th><th>이달 접수</th><th>이달 완료</th><th>직원</th><th>최근 변동</th></tr></thead><tbody>
       ${active.map(st => { const k = siteKpis(st.id); const w = (v, warn) => `<td class="n${warn && v ? ' warn' : ''}">${v}</td>`;
         return `<tr class="click" data-act="hq-enter" data-site="${esc(st.id)}" tabindex="0"><td><b>${esc(st.name)}</b></td>${w(k.open)}${w(k.received, 1)}${w(k.done, 1)}${w(k.overdue, 1)}${w(k.urgent, 1)}${w(k.month)}${w(k.monthClosed)}${w(k.staff)}<td>${k.last ? fmt(k.last) : '-'}</td></tr>`; }).join('')}
-    </tbody></table></div>` : '<p class="hint">운영 중인 사업장이 없습니다. 아래에서 사업장을 추가하세요.</p>'}
-  </div>
-  <div class="sec act">
-    <h3>전체 사업장 월간 현황</h3>
+    </tbody></table></div>` : '<p class="hint">운영 중인 사업장이 없습니다. 아래에서 사업장을 추가하세요.</p>')}
+  ${card('전체 사업장 월간 현황', '보고 월을 고르면 사업장별 이월·접수·처리율·월말 미결이 나오고, 결재란이 있는 A4 보고서로 인쇄할 수 있습니다.', `
     <div class="btns"><label class="fld" style="max-width:200px"><span>보고 월</span><input type="month" id="hq-month" value="${esc(ym)}" max="${ymd(new Date()).slice(0, 7)}"></label><span class="spacer"></span><button type="button" class="btn primary" data-act="hq-print">인쇄 / PDF 저장</button></div>
-    <div class="report-preview">${hqSummaryHTML(ym)}</div>
-  </div>
-  <div class="sec act">
-    <h3>사업장 관리 <span class="hint">(${sites.length}개)</span></h3>
+    <div class="tscroll">${hqSummaryHTML(ym)}</div>`)}
+  ${card(`사업장 관리 <span class="cnt">${sites.length}</span>`, '보관한 사업장은 현황에서 빠지지만 기록은 남고, \'다시 운영\'으로 되돌릴 수 있습니다. 사업장 안의 단지명·연락처·직원 명단은 그 사업장에 들어가 <b>직원·설정</b>에서 정합니다.', `
     ${sites.length ? `<ul class="staff-list">${sites.map(st => `<li><form class="site-row" data-site="${esc(st.id)}"><input type="text" value="${esc(st.name)}" aria-label="사업장 이름" required>${st.archived ? '<span class="tag soft">보관</span>' : ''}<button type="submit" class="btn sm">이름 저장</button><button type="button" class="btn sm${st.archived ? '' : ' danger'}" data-act="hq-archive" data-site="${esc(st.id)}" data-on="${st.archived ? '0' : '1'}">${st.archived ? '다시 운영' : '보관'}</button></form></li>`).join('')}</ul>` : ''}
     <form id="f-site" class="grid2">
       <label class="fld"><span>새 사업장 이름</span><input type="text" id="site-name" required placeholder="예) 청라 에이스하이테크시티"></label>
       <div class="btns" style="align-self:end"><button type="submit" class="btn">사업장 추가</button></div>
-    </form>
-    <p class="hint">보관한 사업장은 현황에서 빠지지만 기록은 남고, '다시 운영'으로 되돌릴 수 있습니다. 사업장 안의 단지명·연락처·직원 명단은 그 사업장에 들어가 <b>직원·설정</b>에서 정합니다.</p>
-  </div>
-  <div class="sec act">
-    <h3>계정 관리 <span class="hint">(${S.db.users.length}명)</span></h3>
-    <p class="hint">관리소장 계정은 여기서 바로 만듭니다(이메일 형식의 아이디 + 비밀번호 6자 이상). 만든 아이디·비밀번호를 소장에게 알려 주세요. 직원은 계정이 필요 없고, 소장이 <b>직원·설정 → 직원 접속 링크</b>로 들여보냅니다.</p>
+    </form>`)}
+  ${card(`계정 관리 <span class="cnt">${S.db.users.length}</span>`, '관리소장 계정은 여기서 바로 만듭니다(이메일 형식의 아이디 + 비밀번호 6자 이상). 만든 아이디·비밀번호를 소장에게 알려 주세요. 직원은 계정이 필요 없고, 소장이 <b>직원·설정 → 직원 접속 링크</b>로 들여보냅니다.', `
     ${S.db.users.length ? `<div class="tscroll"><table class="rtable"><thead><tr><th>아이디(이메일)</th><th>역할</th><th>사업장</th><th>이름</th><th></th></tr></thead><tbody>
       ${S.db.users.map(u => { const me = u.email === (S.user.email || '').toLowerCase(); return `<tr><td>${esc(u.email)}</td><td>${esc(ROLE_LABEL[u.role] || u.role)}</td><td>${u.role === 'hq' ? '전체' : esc(siteName(u.site) || u.site || '-')}</td><td>${esc(u.name)}</td><td class="n nowrap">${me ? '<span class="hint">나</span>' : `<button type="button" class="btn sm" data-act="hq-user-pw" data-email="${esc(u.email)}">비밀번호 재설정</button> <button type="button" class="btn sm danger" data-act="hq-user-del" data-email="${esc(u.email)}">삭제</button>`}</td></tr>`; }).join('')}
     </tbody></table></div>` : ''}
@@ -972,7 +964,7 @@ function hqView(){
       <label class="fld"><span>이름 (선택)</span><input type="text" id="u-name" placeholder="예) 박소장"></label>
       <div class="btns" style="align-self:end"><button type="submit" class="btn primary">계정 만들기 / 지정</button></div>
     </form>
-    <p class="hint">이메일은 실제로 쓰지 않아도 되며(메일 발송 없음) 로그인 아이디로만 쓰입니다. 비밀번호를 잊으면 위 목록의 <b>비밀번호 재설정</b>으로 새로 정해 알려 주세요.</p>
+    <p class="hint">이메일은 실제로 쓰지 않아도 되며(메일 발송 없음) 로그인 아이디로만 쓰입니다. 비밀번호를 잊으면 위 목록의 <b>비밀번호 재설정</b>으로 새로 정해 알려 주세요.</p>`)}
   </div>`;
 }
 /* ---------- 본사 화면 그래프 (외부 라이브러리 없이 SVG 직접 생성) ---------- */
@@ -1007,7 +999,7 @@ function hqChartData(ym){
 function chartOpen(d, w){
   const rows = d.open.filter(r => r.total);
   if(!rows.length) return '<p class="hint">미결 민원이 없습니다. 모든 사업장이 회신까지 마쳤습니다.</p>';
-  const lw = Math.min(150, Math.round(w * 0.3)), bh = 22, gap = 10, right = 40, pw = w - lw - right;
+  const lw = Math.min(170, Math.round(w * 0.3)), bh = 26, gap = 12, right = 44, pw = w - lw - right;
   const max = Math.max(1, ...rows.map(r => r.total)), h = rows.length * (bh + gap);
   let defs = '', body = '';
   rows.forEach((r, i) => {
@@ -1033,7 +1025,7 @@ function chartOpen(d, w){
 }
 /* 2. 최근 6개월 접수·처리 완료: 월별 두 막대 */
 function chartTrend(d, w){
-  const t = d.trend, h = 220, top = 22, bottom = 24, left = 34, right = 8;
+  const t = d.trend, h = 240, top = 24, bottom = 26, left = 36, right = 8;
   const max = Math.max(1, ...t.map(r => Math.max(r.recv, r.closed)));
   const step = niceStep(max), ymax = Math.ceil(max / step) * step;
   const pw = w - left - right, ph = h - top - bottom, gw = pw / t.length, bw = Math.min(30, Math.max(8, (gw - 14) / 2 - 2));
@@ -1064,8 +1056,10 @@ function chartTrend(d, w){
 function chartCat(d, w, ym){
   const rows = d.cat;
   if(!rows.length) return `<p class="hint">${esc(monthLabel(ym))}에 접수된 민원이 없습니다.</p>`;
-  const lw = Math.min(110, Math.round(w * 0.3)), bh = 18, gap = 8, right = 40, pw = w - lw - right;
-  const max = Math.max(1, ...rows.map(r => r.total)), h = rows.length * (bh + gap), sum = rows.reduce((a, r) => a + r.total, 0);
+  // 옆의 6개월 그래프와 높이를 맞춘다(분류 수가 적으면 막대 간격을 넓힘)
+  const lw = Math.min(120, Math.round(w * 0.3)), right = 44, pw = w - lw - right, h = 240;
+  const gap = Math.max(8, Math.min(16, h / rows.length - 20)), bh = Math.min(22, h / rows.length - gap);
+  const max = Math.max(1, ...rows.map(r => r.total)), sum = rows.reduce((a, r) => a + r.total, 0);
   const body = rows.map((r, i) => {
     const y = i * (bh + gap) + gap / 2, bwid = Math.max(4, r.total / max * pw);
     return `<g data-tip="${esc(`${r.name} ${r.total}건 (${pct(r.total, sum)}%)`)}"><rect x="0" y="${y - gap / 2}" width="${w}" height="${bh + gap}" fill="transparent"/>
