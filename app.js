@@ -1125,6 +1125,8 @@ document.addEventListener('pointermove', moveTip);
 document.addEventListener('pointerdown', moveTip);
 document.addEventListener('scroll', () => { tipEl.hidden = true; }, true);
 $('#popup').addEventListener('click', e => { if(e.target === e.currentTarget) e.currentTarget.close(); });
+/* 팝업을 직접 닫으면 기록에 남겨 둔 '다시 열기' 표시도 지운다 */
+$('#popup').addEventListener('close', () => { const dlg = $('#popup'); if(dlg.dataset.leaving){ delete dlg.dataset.leaving; return; } try{ if(history.state && history.state.popup){ const st = Object.assign({}, history.state); delete st.popup; history.replaceState(st, ''); } }catch(e){} });
 
 /* 본사 숫자 타일을 누르면 뜨는 간단한 표 팝업 */
 const KPI_DEF = {
@@ -1159,7 +1161,7 @@ function openKpiPopup(k){
   }
   $('#popup-title').textContent = `${d.title} · ${k === 'sites' ? S.db.sites.filter(x => !x.archived).length + '곳' : hqKpiList(k).length + '건'}`;
   $('#popup-body').innerHTML = body + (k === 'sites' ? '<p class="hint">줄을 누르면 그 사업장 화면으로 들어갑니다.</p>' : '<p class="hint">줄을 누르면 그 사업장의 해당 민원이 열립니다.</p>');
-  const dlg = $('#popup'); if(!dlg.open) dlg.showModal(); dlg.scrollTop = 0;
+  const dlg = $('#popup'); dlg.dataset.k = k; if(!dlg.open) dlg.showModal(); dlg.scrollTop = 0;
 }
 function printHqReport(){
   $('#print-area').innerHTML = hqReportHTML(S.hqMonth);
@@ -1510,7 +1512,12 @@ document.addEventListener('click', e => {
   }
   else if(a === 'hq'){ if(!S.hq) return; if(history.state && history.state.site) history.back(); else goHq(); }
   else if(a === 'close-detail'){ if(history.state && history.state.sheet) history.back(); else closeSheet(); }
-  else if(a === 'hq-enter'){ if(!S.hq) return; if($('#popup').open) $('#popup').close(); enterSite(b.dataset.site, false, b.dataset.id || null); }
+  else if(a === 'hq-enter'){
+    if(!S.hq) return;
+    const dlg = $('#popup');
+    if(dlg.open){ dlg.dataset.leaving = '1'; dlg.close(); try{ history.replaceState(Object.assign({}, history.state || {}, {popup:dlg.dataset.k}), ''); }catch(e){} }   // 뒤로 가면 이 팝업이 다시 열리게
+    enterSite(b.dataset.site, false, b.dataset.id || null);
+  }
   else if(a === 'hq-kpi'){ if(!S.hq) return; openKpiPopup(b.dataset.k); }
   else if(a === 'popup-close'){ $('#popup').close(); }
   else if(a === 'hq-print'){ if(S.hq) printHqReport(); }
@@ -1648,7 +1655,9 @@ document.addEventListener('change', async e => {
 function enterSite(id, fromHistory, selectId){
   if(!S.db.sites.some(x => x.id === id)) return;
   if(S.hq && !fromHistory){
-    try{ if(history.state && history.state.site) history.replaceState({site:id}, ''); else history.pushState({site:id}, ''); }catch(e){}
+    // 팝업에서 민원을 골라 들어오는 휴대폰 화면은 기록을 한 칸만 쌓아, 뒤로 가기 한 번에 본사 팝업으로 돌아간다
+    const st = selectId && isNarrow() ? {site:id, sheet:1} : {site:id};
+    try{ if(history.state && history.state.site) history.replaceState(st, ''); else history.pushState(st, ''); }catch(e){}
   }
   S.site = id; lsSet('site', id);
   S.panel = null; S.selectedId = null; S.filter = 'open'; S.q = '';
@@ -1665,7 +1674,7 @@ window.addEventListener('popstate', e => {
   const st = e.state || {};
   if(S.hq){
     if(st.site){ if(S.panel === 'hq' || S.site !== st.site) enterSite(st.site, true); }
-    else { goHq(); return; }
+    else { goHq(); if(st.popup) openKpiPopup(st.popup); return; }
   }
   if(!st.sheet && document.body.classList.contains('sheet')) closeSheet();
 });
