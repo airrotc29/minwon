@@ -978,7 +978,7 @@ function hqView(){
       <label class="fld"><span>아이디 (이메일 형식)</span><input type="email" id="u-email" required placeholder="예) cheongna@sunmin.kr"></label>
       <label class="fld"><span>비밀번호 (새 계정이면 필수, 6자 이상)</span><input type="password" id="u-pw" autocomplete="new-password" placeholder="기존 계정은 비워 두면 역할만 바뀜"></label>
       <label class="fld"><span>역할</span><select id="u-role"><option value="manager">관리소장</option><option value="hq">본사 담당자</option></select></label>
-      <label class="fld"><span>사업장</span><select id="u-site">${siteOpts(S.site)}</select></label>
+      <label class="fld"><span>사업장</span><select id="u-site"><option value="">본사 (전체 사업장)</option>${siteOpts(S.site)}</select></label>
       <label class="fld"><span>이름 (선택)</span><input type="text" id="u-name" placeholder="예) 박소장"></label>
       <div class="btns" style="align-self:end"><button type="submit" class="btn primary">계정 만들기 / 지정</button></div>
     </form>
@@ -1723,6 +1723,10 @@ window.addEventListener('popstate', e => {
 window.addEventListener('resize', () => { if(document.body.classList.contains('sheet') !== (isNarrow() && S.panel !== 'hq' && !!(S.panel || S.selectedId))) render(); });
 try{ history.replaceState(null, ''); }catch(e){}   // 새로 고침 뒤에는 처음 화면부터 기록
 document.addEventListener('change', e => { if(e.target.id === 'hq-month' && e.target.value){ S.hqMonth = e.target.value; resetDetail(); } });
+document.addEventListener('change', e => {
+  if(e.target.id === 'u-role'){ const st = $('#u-site'); if(e.target.value === 'hq') st.value = ''; else if(!st.value) st.selectedIndex = 1; }
+  if(e.target.id === 'u-site'){ const r = $('#u-role'); if(!e.target.value) r.value = 'hq'; else if(r.value === 'hq') r.value = 'manager'; }
+});
 $('#me-select').addEventListener('change', e => { S.me = e.target.value || null; lsSet('meStaff', S.me || ''); S.selectedId = null; render(); });
 
 document.addEventListener('submit', e => {
@@ -1802,7 +1806,7 @@ document.addEventListener('submit', e => {
   else if(f.id === 'f-user'){
     if(!S.hq) return;
     const email = val('u-email').toLowerCase(), pw = document.getElementById('u-pw').value.trim(), role = val('u-role'), site = val('u-site'), name = val('u-name');
-    if(role !== 'hq' && !site){ toast('사업장을 고르세요'); return; }
+    if(role !== 'hq' && !site){ toast('관리소장은 사업장을 골라야 합니다. 본사 담당자면 역할을 「본사 담당자」로 바꾸세요'); return; }
     if(pw && pw.length < 6){ toast('비밀번호는 6자 이상이어야 합니다'); return; }
     const exists = S.db.users.some(u => u.email === email);
     if(!pw && !exists){ toast('새 계정은 비밀번호가 필요합니다'); return; }
