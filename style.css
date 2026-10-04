@@ -664,3 +664,10 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 @keyframes k-row{0%,100%{background:transparent;box-shadow:inset 5px 0 0 var(--k-bd)}50%{background:var(--k-row);box-shadow:inset 5px 0 0 var(--k-bd2)}}
 .act.callout .chk span::before{background:#fff;border-color:#7A8193}
 .act.callout .chk input:checked + span::before{background:var(--k-bd,#1E3A7B);border-color:var(--k-bd,#1E3A7B)}
+
+/* 직원 '내 할 일': 탭과 목록 줄이 노랗게 깜빡 */
+.k-todo{--k-bg1:#FFF3B0;--k-bg2:#FFE15A;--k-bd:#E0B400;--k-bd2:#D01E12;--k-ink:#6B5800;--k-glow:rgba(255,200,0,.6);--k-row:rgba(255,215,40,.35)}
+.stab.hot{position:relative;animation:stab-glow 1.4s ease-in-out infinite}
+.stab.hot b{animation:num-soft 1s ease-in-out infinite}
+@keyframes stab-glow{0%,100%{background:#FFF3B0;box-shadow:inset 0 0 0 1.5px #E0B400}50%{background:#FFE15A;box-shadow:inset 0 0 0 1.5px #D01E12,0 0 12px 2px rgba(255,200,0,.6)}}
+.stab.hot,.stab.hot span{color:#141B2D}

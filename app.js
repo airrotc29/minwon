@@ -527,7 +527,7 @@ const seenKey = c => `${c.id}:${c.status}`;
 let seenTap = new Set(); try{ seenTap = new Set(JSON.parse(lsGet('seenTap') || '[]')); }catch(e){}
 function markSeen(c){ if(!c) return; seenTap.add(seenKey(c)); try{ lsSet('seenTap', JSON.stringify([...seenTap].slice(-500))); }catch(e){} }
 // 소장 화면에서는 지시·회신이 필요한 민원(접수·처리완료)이 어느 목록에 있든 처리될 때까지 계속 깜빡인다
-const needsTap = c => S.role === 'manager' && (c.status === 'received' || c.status === 'done');
+const needsTap = c => S.role === 'manager' ? (c.status === 'received' || c.status === 'done') : (S.role === 'staff' && !!S.me && isTodo(c));
 function filtered(){
   fixFilter();
   let b = base().filter(c => matchFilter(c, S.filter));
@@ -605,7 +605,7 @@ function renderInstall(){
   const show = S.user && !standalone() && !lsGet('installDismiss') && !lsGet('installDone') && (linkStaff || installEvt);
   el.hidden = !show;
   if(!show) return;
-  let how, sub = `다음부터는 ${linkStaff ? '링크나 QR 없이 ' : ''}아이콘만 누르면 바로 열립니다.`;
+  let how, sub = `다음부터는 ${linkStaff ? '링크 없이 ' : ''}아이콘만 누르면 바로 열립니다.`;
   if(installEvt) how = '<button type="button" class="btn primary" data-act="install">바탕화면에 추가</button>';
   else if(inKakao){ how = '<button type="button" class="btn primary" data-act="open-browser">크롬(기본 브라우저)에서 열기</button>'; sub = '카톡 안에서는 바탕화면에 넣을 수 없습니다. 버튼을 눌러 브라우저로 열면 바로 추가할 수 있습니다.'; }
   else if(inAppBrowser){ how = ''; sub = '지금 앱 안의 브라우저에서 열려 있습니다. 오른쪽 위 메뉴에서 <b>다른 브라우저로 열기</b>(크롬·사파리)를 누른 뒤 바탕화면에 추가하세요.'; }
@@ -734,7 +734,7 @@ function renderList(){
     return;
   }
   el.innerHTML = head + list.map(c => `
-    <button type="button" class="row${needsTap(c) ? ' blink k-' + c.status : ''}" data-act="open" data-id="${esc(c.id)}" aria-current="${S.selectedId === c.id && !S.panel}">
+    <button type="button" class="row${needsTap(c) ? ' blink k-' + (S.role === 'staff' ? 'todo' : c.status) : ''}" data-act="open" data-id="${esc(c.id)}" aria-current="${S.selectedId === c.id && !S.panel}">
       <span class="l1"><span class="no">#${nums[c.id]}</span><span>${esc(c.category)}</span><span>${esc(c.location)}</span>${receiver(c) ? `<span>· ${esc(receiver(c))} 접수</span>` : ''}</span>
       <span class="t">${esc(c.title)}</span>
       <span class="l3"><span class="pill s-${c.status}">${ST[c.status].label}</span>
