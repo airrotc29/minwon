@@ -1209,7 +1209,7 @@ function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = fals
 function failMsg(e){
   if(e && e.code === 'quota_exceeded') return '저장 공간이 가득 찼습니다. 백업 후 오래된 민원을 삭제하거나 로고 이미지를 작게 줄이세요.';
   if(e && e.code === 'gone') return '다른 기기에서 삭제된 민원입니다.';
-  if(e && e.code === 'forbidden') return '권한이 없는 작업입니다.';
+  if(e && e.code === 'forbidden') return '권한이 없는 작업입니다. (서버: ' + String(e.message || '').slice(0, 120) + ')';
   if(e && e.code === 'signup_off') return 'Supabase → Authentication → Sign In / Providers 에서 "Allow new users to sign up"을 켜야 계정을 만들 수 있습니다.';
   if(e && e.code === 'auth') return '로그인이 풀렸습니다. 다시 로그인해 주세요.';
   if(e && e.code === 'network' || e instanceof TypeError) return '인터넷 연결을 확인하세요. 저장되지 않았습니다.';
