@@ -6,7 +6,7 @@
   --st-received:#5A6478; --st-assigned:#A86400; --st-progress:#0E7C86; --st-done:#2B7A4B; --st-replied:#7A8193;
   --urgent:#BF3428; --urgent-soft:#FBE4E1;
   /* 그래프 계열 색(색약 구분 검증 완료, 순서 고정) */
-  --viz1:#2a78d6; --viz2:#eda100; --viz3:#1baf7a; --viz4:#d9382b;
+  --viz1:#2a78d6; --viz2:#eda100; --viz3:#d9382b; --viz4:#1baf7a;
   --font:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
   --r:8px;
@@ -15,7 +15,7 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0F1420; --surface:#171E2E; --sunk:#1F2839; --ink:#E4E9F3; --muted:#9AA5BC; --line:#2C3649;
   --accent:#8FB0EE; --accent-ink:#0D1424; --accent-soft:#1E2C4D;
-  --viz1:#3987e5; --viz2:#c98500; --viz3:#199e70; --viz4:#e04b3f;
+  --viz1:#3987e5; --viz2:#c98500; --viz3:#d6302a; --viz4:#1aa874;
   --st-received:#A3ADC2; --st-assigned:#E5A64A; --st-progress:#5CC6CF; --st-done:#6CC392; --st-replied:#8E96A8;
   --urgent:#F07B6F; --urgent-soft:#3A1F1C; color-scheme:dark;
 }}

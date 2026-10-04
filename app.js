@@ -1049,7 +1049,7 @@ function chartTrend(d, w){
   let defs = gradDefs('vt', true);
   for(let v = 0; v <= ymax; v += step) grid += `<line x1="${left}" x2="${w - right}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="vz-grid${v ? '' : ' base'}"${v ? ' stroke-dasharray="3 4"' : ''}/><text x="${left - 6}" y="${Y(v).toFixed(1)}" class="vz-ax" text-anchor="end" dominant-baseline="central">${v}</text>`;
   const peak = [Math.max(...t.map(r => r.recv)), Math.max(...t.map(r => r.closed))];
-  const SER = [['recv', '접수', 0], ['closed', '처리 완료', 2]];   // 접수는 파랑, 처리 완료는 녹색
+  const SER = [['recv', '접수', 0], ['closed', '처리 완료', 3]];   // 접수는 파랑, 처리 완료는 녹색
   let bars = '';
   t.forEach((r, i) => {
     const cx = left + gw * i + gw / 2, last = i === t.length - 1;
