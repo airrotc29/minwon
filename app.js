@@ -268,7 +268,7 @@ const idb = {
   get(id){ return this.tx('readonly', st => st.get(id)); }
 };
 async function uploadPhoto(path, blob){
-  await q(sb.storage.from('photos').upload(path, blob, {contentType:'image/jpeg', upsert:true}));
+  await q(sb.storage.from('photos').upload(path, blob, {contentType:'image/jpeg', upsert:false}));
   return 'sb:' + path;
 }
 async function savePhoto(blob, cid){
@@ -1507,7 +1507,13 @@ async function onSignedIn(user){
   S.user = user;
   if(!first) return;
   setSync('saving', '불러오는 중');
-  try { S.access = (await q(sb.rpc('my_access'))) || {}; S.oldSchema = false; }
+  try {
+    // touch_access: 역할을 돌려주면서 사용자 id↔이메일을 기록(사진 저장소 권한 확인용). 예전 서버면 my_access 로
+    let acc;
+    try { acc = await q(sb.rpc('touch_access')); }
+    catch(e1){ if(/Could not find the function|schema cache/i.test(e1.message || '')) acc = await q(sb.rpc('my_access')); else throw e1; }
+    S.access = acc || {}; S.oldSchema = false;
+  }
   catch(e){
     console.error(e);
     // 사업장 기능이 없는 예전 서버: 예전 방식(관리소장 여부만)으로 동작하고 SQL 재실행을 안내

@@ -48,6 +48,11 @@ create table if not exists public.staff_sessions (    -- 직원 링크로 들어
   token      text not null,                           -- 들어올 때 쓴 링크 토큰(링크를 새로 만들면 무효)
   created_at timestamptz not null default now()
 );
+create table if not exists public.user_roles (        -- 로그인한 사용자 id → 이메일 (사진 저장소처럼 이메일을 못 읽는 곳에서 역할 확인용)
+  user_id    uuid primary key,
+  email      text not null,
+  updated_at timestamptz not null default now()
+);
 create table if not exists public.app_users (         -- 로그인 계정 → 역할·사업장
   email      text primary key,
   role       text not null check (role in ('hq', 'manager', 'staff')),
@@ -102,16 +107,31 @@ end $$;
 
 -- 로그인한 사람의 역할·사업장 (서버 보안 규칙과 앱 화면이 같은 기준을 쓴다)
 --   이메일 계정 → app_users / 직원 링크(익명 로그인) → staff_sessions (링크 토큰이 현재 것과 같을 때만)
+--   사진 저장소(Storage)처럼 이메일을 못 읽는 곳에서는 user_roles(사용자 id → 이메일)로 다시 app_users 를 찾는다
 create or replace function public.my_access()
 returns jsonb language sql stable security definer set search_path = public as $$
   select coalesce(
     (select jsonb_build_object('role', role, 'site_id', site_id, 'name', name)
        from app_users where email = lower(nullif(auth.jwt() ->> 'email', ''))),
+    (select jsonb_build_object('role', a.role, 'site_id', a.site_id, 'name', a.name)
+       from user_roles ur join app_users a on a.email = ur.email where ur.user_id = auth.uid()),
     (select jsonb_build_object('role', 'staff', 'site_id', ss.site_id, 'link', true)
        from staff_sessions ss join sites s on s.id = ss.site_id
        where ss.user_id = auth.uid() and ss.token = s.staff_token and not s.archived),
     '{}'::jsonb);
 $$;
+-- 로그인 직후 앱이 호출: 사용자 id ↔ 이메일을 기록해 두고 역할을 돌려준다
+create or replace function public.touch_access()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_email text := lower(nullif(auth.jwt() ->> 'email', ''));
+begin
+  if auth.uid() is null then return '{}'::jsonb; end if;
+  if v_email is not null then
+    insert into user_roles(user_id, email, updated_at) values (auth.uid(), v_email, now())
+      on conflict (user_id) do update set email = excluded.email, updated_at = now();
+  end if;
+  return my_access();
+end $$;
 create or replace function public.my_role()
 returns text language sql stable security definer set search_path = public as $$
   select public.my_access() ->> 'role';
@@ -162,6 +182,7 @@ begin
   if not is_hq() then raise exception 'forbidden'; end if;
   if lower(p_email) = lower(coalesce(auth.jwt() ->> 'email', '')) then raise exception 'self'; end if;
   delete from app_users where email = lower(p_email);
+  delete from user_roles where email = lower(p_email);
   begin
     delete from auth.users where lower(email) = lower(p_email);
   exception when insufficient_privilege or undefined_table then ok := false;
@@ -195,6 +216,7 @@ alter table public.staff      enable row level security;
 alter table public.settings   enable row level security;
 alter table public.app_users  enable row level security;
 alter table public.staff_sessions enable row level security;   -- 함수로만 다룬다(직접 읽기·쓰기 불가)
+alter table public.user_roles     enable row level security;
 
 do $$
 declare t text;
@@ -277,7 +299,7 @@ declare f text;
 begin
   foreach f in array array['my_access()', 'my_role()', 'my_site()', 'is_hq()', 'can_view(text)', 'can_manage(text)', 'is_manager()',
                            'add_complaint(text, jsonb, jsonb, text)', 'apply_action(text, jsonb, jsonb)', 'merge_settings(jsonb, text)',
-                           'rotate_staff_link(text)', 'claim_staff_link(text)', 'set_login_password(text, text)', 'remove_login(text)'] loop
+                           'rotate_staff_link(text)', 'claim_staff_link(text)', 'set_login_password(text, text)', 'remove_login(text)', 'touch_access()'] loop
     execute format('revoke execute on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);
   end loop;
