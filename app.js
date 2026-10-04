@@ -438,12 +438,17 @@ function renderBrand(){
     img.onerror = () => { img.hidden = true; mark.hidden = false; };
     img.src = src;
   }
-  const bn = s.buildingName || (SERVER ? siteName() : '');
+  const bn = SERVER && !S.user ? '' : (s.buildingName || (SERVER ? siteName() : ''));
   // 관리소장·직원 화면: 회사명 대신 '사무소 이름 + 관리단'. 본사·임원은 회사명 그대로
-  const office = !S.allSites && bn ? (/관리단$/.test(bn.trim()) ? bn.trim() : `${bn.trim()} 관리단`) : '';
-  $('#co-name').textContent = office || s.company || COMPANY;
+  const signedIn = !SERVER || !!S.user;
+  let office = signedIn && !S.allSites && bn ? (/관리단$/.test(bn.trim()) ? bn.trim() : `${bn.trim()} 관리단`) : '';
+  if(SERVER && S.user){ if(S.allSites) lsSet('office', ''); else if(office) lsSet('office', office); }        // 이 기기가 어느 사무소 것인지 기억 → 로그인 화면에도 사용
+  const shown = office || (SERVER && !S.user ? lsGet('office') || '' : '');
+  $('#co-name').textContent = shown || s.company || COMPANY;
+  $('#foot-name').textContent = shown || '선민종합관리(주)';
+  $('#bc-name').textContent = shown || '선민종합관리(주)';
   $('#bname').textContent = S.panel === 'hq' ? '본사 · 전체 사업장' : bn ? `${bn} 관리사무소` : '접수 · 지시 · 보고 · 회신';
-  document.title = `${office || s.company || COMPANY} 민원관리 System`;
+  document.title = `${shown || s.company || COMPANY} 민원관리 System`;
 }
 
 /* 로그인 계정에 따라 관리소장 화면 허용 여부와 '나는' 직원을 정한다.
@@ -527,7 +532,7 @@ function render(){
   if(noAccess){
     const anon = !S.user.email;
     $('#no-access .msg').innerHTML = anon
-      ? `<strong>직원 접속 링크가 만료되었거나 잘못되었습니다</strong>${S.linkError ? esc(S.linkError) + '<br>' : ''}관리소장에게 새 접속 링크(QR)를 받아 다시 열어 주세요. 관리소장은 <b>직원·설정 → 직원 접속 링크</b>에서 만들 수 있습니다.`
+      ? `<strong>직원 접속 링크가 만료되었거나 잘못되었습니다</strong>${S.linkError ? esc(S.linkError) + '<br>' : ''}관리소장에게 새 접속 링크를 받아 다시 열어 주세요. 관리소장은 <b>직원·설정 → 직원 접속 링크</b>에서 만들 수 있습니다.`
       : `<strong>아직 사업장이 지정되지 않은 계정입니다</strong>본사 담당자가 「본사 → 계정 관리」에서 이 이메일(${esc(S.user.email)})의 역할과 사업장을 지정하면 바로 쓸 수 있습니다. 지정된 뒤에는 이 화면을 새로 고침하세요.`;
   }
   document.body.classList.toggle('no-access', noAccess);

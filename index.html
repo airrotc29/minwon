@@ -62,12 +62,12 @@
       <div class="bc-sm">SM</div>
       <div class="bc-fm">FACILITY MANAGEMENT</div>
       <div class="bc-rule"></div>
-      <div class="bc-name">선민종합관리(주)</div>
+      <div class="bc-name" id="bc-name">선민종합관리(주)</div>
       <div class="bc-slogan">사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</div>
     </div>
     <form id="f-login" class="sec">
       <h2>로그인</h2>
-      <p class="hint">본사 담당자와 관리소장만 아이디(이메일)·비밀번호로 로그인합니다. <b>직원은 로그인이 필요 없습니다.</b> 관리소장이 보낸 직원 접속 링크(QR)를 열면 바로 직원 화면이 열립니다.</p>
+      <p class="hint">본사 담당자와 관리소장만 아이디(이메일)·비밀번호로 로그인합니다. <b>직원은 로그인이 필요 없습니다.</b> 관리소장이 보낸 직원 접속 링크를 열면 바로 직원 화면이 열립니다.</p>
       <label class="fld"><span>아이디 (이메일)</span><input type="email" id="lg-email" autocomplete="username" required></label>
       <label class="fld"><span>비밀번호</span><input type="password" id="lg-pw" autocomplete="current-password" required></label>
       <div class="btns"><button type="submit" class="btn primary">로그인</button></div>
@@ -80,7 +80,7 @@
   <div class="install" id="install" hidden></div>
   <footer class="foot">
     <img src="logo.svg" alt="" width="22" height="22">
-    <span><b>선민종합관리(주)</b> · FACILITY MANAGEMENT</span>
+    <span><b id="foot-name">선민종합관리(주)</b> · FACILITY MANAGEMENT</span>
     <small>사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</small>
   </footer>
 </div>
@@ -96,6 +96,6 @@
 <div id="print-area" aria-hidden="true"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js?v=11"></script>
-<script src="app.js?v=64"></script>
+<script src="app.js?v=66"></script>
 </body>
 </html>
