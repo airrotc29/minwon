@@ -39,7 +39,7 @@ const DEFAULT_SETTINGS = {company:COMPANY, buildingName:'', officePhone:'', defa
 const CFG = window.MINWON_CONFIG || {};
 const SERVER = !!(CFG.supabaseUrl && CFG.supabaseKey);
 
-const ROLE_LABEL = {hq:'본사 담당자', manager:'관리소장', staff:'직원'};
+const ROLE_LABEL = {hq:'본사 담당자', exec:'임원', manager:'관리소장', staff:'직원'};
 
 const S = {
   role: lsGet('role') || 'manager', filter:'open', q:'', selectedId:null, panel:null,
@@ -375,7 +375,7 @@ const store = {
     S.db.sites.sort(bySiteName); deriveSite();
   },
   async saveUser(u){
-    await write(() => q(sb.from('app_users').upsert({email:u.email, role:u.role, site_id:u.role === 'hq' ? null : u.site, name:u.name || null})));
+    await write(() => q(sb.from('app_users').upsert({email:u.email, role:u.role, site_id:u.role === 'manager' ? u.site : null, name:u.name || null})));
     const i = S.db.users.findIndex(x => x.email === u.email);
     if(i >= 0) S.db.users[i] = u; else S.db.users.push(u);
     S.db.users.sort((a, b) => a.email.localeCompare(b.email));
@@ -450,9 +450,14 @@ function applyAccount(){
   const email = (S.user && S.user.email || '').toLowerCase();
   const a = S.access || {};
   S.hq = SERVER && a.role === 'hq';
+  S.exec = SERVER && a.role === 'exec';          // 임원: 전체 사업장 열람만
+  S.allSites = S.hq || S.exec;
   S.canManage = !SERVER || S.hq || (a.role === 'manager' && a.site_id === S.site);
-  if(!S.hq && S.panel === 'hq') S.panel = null;
-  if(!S.canManage){ S.role = 'staff'; if(S.panel === 'settings' || S.panel === 'report') S.panel = null; }
+  if(!S.allSites && S.panel === 'hq') S.panel = null;
+  if(!S.canManage){
+    S.role = S.exec ? 'manager' : 'staff';         // 임원은 관리소장 화면을 읽기 전용으로 본다
+    if(S.panel === 'settings' || (S.panel === 'report' && !S.exec)) S.panel = null;
+  }
   const st = email && S.staff.find(x => (x.email || '').toLowerCase() === email);
   S.lockMe = !!st;
   if(st) S.me = st.id;
@@ -527,14 +532,18 @@ function render(){
   /* 휴대폰: 민원을 고르거나 접수·설정·보고 화면을 열면 전체 화면 시트로 띄우고, 뒤로 가기로 닫는다 */
   const sheet = isNarrow() && !hqPanel && !!(S.panel || S.selectedId);
   document.body.classList.toggle('sheet', sheet);
-  $('#hq-tools').hidden = !S.hq || hqPanel;
-  document.body.classList.toggle('hq-mode', !!S.hq && !hqPanel);
+  $('#hq-tools').hidden = !S.allSites || hqPanel;
+  document.body.classList.toggle('hq-mode', !!S.allSites && !hqPanel);
+  document.body.classList.toggle('readonly', !!S.exec);
+  if(S.allSites && !hqPanel) $('.hq-bar-note').textContent = S.exec ? '임원으로 이 사업장을 열람만 하고 있습니다(접수·지시·회신 불가). 본사 현황으로 돌아가려면 뒤로 가기 버튼을 누르거나 위 목록에서 \'본사 현황\'을 고르세요.' : '본사 담당자로 이 사업장의 관리소장 화면을 보고 있습니다. 본사 현황으로 돌아가려면 뒤로 가기 버튼을 누르거나 위 목록에서 \'본사 현황\'을 고르세요.';
   tipEl.hidden = true;
   const ss = $('#site-select');
   ss.innerHTML = '<option value="">← 본사 현황 (전체)</option>' + S.db.sites.filter(x => !x.archived || x.id === S.site).map(x => `<option value="${esc(x.id)}">${esc(x.name)}${x.archived ? ' (보관)' : ''}</option>`).join('');
   ss.value = S.site;
   $('.seg').hidden = hqPanel;
-  $('#new-btn').hidden = hqPanel;
+  $('#new-btn').hidden = hqPanel || !!S.exec;
+  $('.seg').hidden = hqPanel || !!S.exec;
+  $('#mgr-tools [data-act=settings]').hidden = !!S.exec;
   $('.work').classList.toggle('single', hqPanel);
   $('#list').hidden = hqPanel;
   $('#summary').hidden = hqPanel;
@@ -788,8 +797,8 @@ function reportHTML(ym, meta){
 function reportView(){
   const ym = S.reportMonth || (S.reportMonth = prevMonth());
   const m = reportMeta(ym);
-  return `<div class="d-head"><span class="no">관리소장 전용</span><h2>월간 보고서</h2></div>
-  <form id="f-monthly" class="sec">
+  return `<div class="d-head"><span class="no">${S.exec ? '임원 열람' : '관리소장 전용'}</span><h2>월간 보고서</h2></div>
+  <form id="f-monthly" class="sec${S.exec ? ' ro' : ''}">
     <div class="grid2">
       <label class="fld"><span>보고 월</span><input type="month" id="mr-month" value="${esc(ym)}" max="${ymd(new Date()).slice(0, 7)}"></label>
       <label class="fld"><span>수신</span><input type="text" id="mr-to" value="${esc(m.to)}" placeholder="○○ 관리단"></label>
@@ -943,7 +952,7 @@ function hqView(){
   const mr = reportData(ym, S.db.complaints.filter(c => active.some(st => st.id === siteOf(c))));
   return `<div class="hq">
   <header class="hq-hero">
-    <div class="hq-ht"><span class="no">본사 담당자 전용 · ${esc(ymd(today))} 기준</span><h2>본사 · 사업장 현황</h2><p>운영 중인 ${active.length}개 사업장의 민원 처리 상태를 한눈에 봅니다.</p></div>
+    <div class="hq-ht"><span class="no">${S.exec ? '임원 열람 전용' : '본사 담당자 전용'} · ${esc(ymd(today))} 기준</span><h2>본사 · 사업장 현황</h2><p>운영 중인 ${active.length}개 사업장의 민원 처리 상태를 한눈에 봅니다.</p></div>
     <div class="hq-kpis">
       <button type="button" data-act="hq-kpi" data-k="sites"><b>${active.length}</b><span>운영 사업장</span></button>
       <button type="button" data-act="hq-kpi" data-k="month"><b>${tot.month}</b><span>이달 접수</span><small>완료 ${tot.monthClosed}건</small></button>
@@ -964,25 +973,25 @@ function hqView(){
   ${card('calendar', '전체 사업장 월간 현황', '보고 월을 고르면 사업장별 이월·접수·처리율·월말 미결이 나오고, 결재란이 있는 A4 보고서로 인쇄할 수 있습니다.', `
     <div class="btns"><label class="fld" style="max-width:200px"><span>보고 월</span><input type="month" id="hq-month" value="${esc(ym)}" max="${ymd(new Date()).slice(0, 7)}"></label><span class="spacer"></span><button type="button" class="btn primary" data-act="hq-print">인쇄 / PDF 저장</button></div>
     <div class="tscroll">${hqSummaryHTML(ym)}</div>`)}
-  ${card('building', `사업장 관리 <span class="cnt">${sites.length}</span>`, '보관한 사업장은 현황에서 빠지지만 기록은 남고, \'다시 운영\'으로 되돌릴 수 있습니다. 사업장 안의 단지명·연락처·직원 명단은 그 사업장에 들어가 <b>직원·설정</b>에서 정합니다.', `
+  ${S.hq ? card('building', `사업장 관리 <span class="cnt">${sites.length}</span>`, '보관한 사업장은 현황에서 빠지지만 기록은 남고, \'다시 운영\'으로 되돌릴 수 있습니다. 사업장 안의 단지명·연락처·직원 명단은 그 사업장에 들어가 <b>직원·설정</b>에서 정합니다.', `
     ${sites.length ? `<ul class="staff-list">${sites.map(st => `<li><form class="site-row" data-site="${esc(st.id)}"><input type="text" value="${esc(st.name)}" aria-label="사업장 이름" required>${st.archived ? '<span class="tag soft">보관</span>' : ''}<button type="submit" class="btn sm">이름 저장</button><button type="button" class="btn sm${st.archived ? '' : ' danger'}" data-act="hq-archive" data-site="${esc(st.id)}" data-on="${st.archived ? '0' : '1'}">${st.archived ? '다시 운영' : '보관'}</button></form></li>`).join('')}</ul>` : ''}
     <form id="f-site" class="grid2">
       <label class="fld"><span>새 사업장 이름</span><input type="text" id="site-name" required placeholder="예) 청라 에이스하이테크시티"></label>
       <div class="btns" style="align-self:end"><button type="submit" class="btn">사업장 추가</button></div>
-    </form>`)}
-  ${card('users', `계정 관리 <span class="cnt">${S.db.users.length}</span>`, '관리소장 계정은 여기서 바로 만듭니다(이메일 형식의 아이디 + 비밀번호 6자 이상). 만든 아이디·비밀번호를 소장에게 알려 주세요. 직원은 계정이 필요 없고, 소장이 <b>직원·설정 → 직원 접속 링크</b>로 들여보냅니다.', `
+    </form>`) : ''}
+  ${S.hq ? card('users', `계정 관리 <span class="cnt">${S.db.users.length}</span>`, '관리소장 계정은 여기서 바로 만듭니다(이메일 형식의 아이디 + 비밀번호 6자 이상). 만든 아이디·비밀번호를 소장에게 알려 주세요. 직원은 계정이 필요 없고, 소장이 <b>직원·설정 → 직원 접속 링크</b>로 들여보냅니다.', `
     ${S.db.users.length ? `<div class="tscroll"><table class="rtable"><thead><tr><th>아이디(이메일)</th><th>역할</th><th>사업장</th><th>이름</th><th></th></tr></thead><tbody>
-      ${S.db.users.map(u => { const me = u.email === (S.user.email || '').toLowerCase(); return `<tr><td>${esc(u.email)}</td><td>${esc(ROLE_LABEL[u.role] || u.role)}</td><td>${u.role === 'hq' ? '전체' : esc(siteName(u.site) || u.site || '-')}</td><td>${esc(u.name)}</td><td class="n nowrap">${me ? '<span class="hint">나</span>' : `<button type="button" class="btn sm" data-act="hq-user-pw" data-email="${esc(u.email)}">비밀번호 재설정</button> <button type="button" class="btn sm danger" data-act="hq-user-del" data-email="${esc(u.email)}">삭제</button>`}</td></tr>`; }).join('')}
+      ${S.db.users.map(u => { const me = u.email === (S.user.email || '').toLowerCase(); return `<tr><td>${esc(u.email)}</td><td>${esc(ROLE_LABEL[u.role] || u.role)}</td><td>${u.role === 'manager' ? esc(siteName(u.site) || u.site || '-') : '전체'}</td><td>${esc(u.name)}</td><td class="n nowrap">${me ? '<span class="hint">나</span>' : `<button type="button" class="btn sm" data-act="hq-user-pw" data-email="${esc(u.email)}">비밀번호 재설정</button> <button type="button" class="btn sm danger" data-act="hq-user-del" data-email="${esc(u.email)}">삭제</button>`}</td></tr>`; }).join('')}
     </tbody></table></div>` : ''}
     <form id="f-user" class="grid2">
       <label class="fld"><span>아이디 (이메일 형식)</span><input type="email" id="u-email" required placeholder="예) cheongna@sunmin.kr"></label>
       <label class="fld"><span>비밀번호 (새 계정이면 필수, 6자 이상)</span><input type="password" id="u-pw" autocomplete="new-password" placeholder="기존 계정은 비워 두면 역할만 바뀜"></label>
-      <label class="fld"><span>역할</span><select id="u-role"><option value="manager">관리소장</option><option value="hq">본사 담당자</option></select></label>
+      <label class="fld"><span>역할</span><select id="u-role"><option value="manager">관리소장</option><option value="hq">본사 담당자</option><option value="exec">임원 (전체 열람만)</option></select></label>
       <label class="fld"><span>사업장</span><select id="u-site"><option value="">본사 (전체 사업장)</option>${siteOpts(S.site)}</select></label>
       <label class="fld"><span>이름 (선택)</span><input type="text" id="u-name" placeholder="예) 박소장"></label>
       <div class="btns" style="align-self:end"><button type="submit" class="btn primary">계정 만들기 / 지정</button></div>
     </form>
-    <p class="hint">이메일은 실제로 쓰지 않아도 되며(메일 발송 없음) 로그인 아이디로만 쓰입니다. 비밀번호를 잊으면 위 목록의 <b>비밀번호 재설정</b>으로 새로 정해 알려 주세요.</p>`)}
+    <p class="hint">이메일은 실제로 쓰지 않아도 되며(메일 발송 없음) 로그인 아이디로만 쓰입니다. 비밀번호를 잊으면 위 목록의 <b>비밀번호 재설정</b>으로 새로 정해 알려 주세요.</p>`) : ''}
   </div>`;
 }
 /* ---------- 본사 화면 그래프 (외부 라이브러리 없이 SVG 직접 생성) ---------- */
@@ -1534,17 +1543,17 @@ document.addEventListener('click', e => {
     // 카카오톡 안 브라우저 → 기기의 기본 브라우저(크롬·사파리)로 같은 주소 열기
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
-  else if(a === 'hq'){ if(!S.hq) return; goHq(); }
+  else if(a === 'hq'){ if(!S.allSites) return; goHq(); }
   else if(a === 'close-detail'){ closeSheet(); }
   else if(a === 'hq-enter'){
-    if(!S.hq) return;
+    if(!S.allSites) return;
     const dlg = $('#popup');
     if(dlg.open){ dlg.dataset.quiet = '1'; dlg.close(); }   // 닫힘은 기록하지 않고, 다음 화면만 기록 → 뒤로 가면 이 팝업으로
     enterSite(b.dataset.site, false, b.dataset.id || null);
   }
-  else if(a === 'hq-kpi'){ if(!S.hq) return; openKpiPopup(b.dataset.k); }
+  else if(a === 'hq-kpi'){ if(!S.allSites) return; openKpiPopup(b.dataset.k); }
   else if(a === 'popup-close'){ $('#popup').close(); }
-  else if(a === 'hq-print'){ if(S.hq) printHqReport(); }
+  else if(a === 'hq-print'){ if(S.allSites) printHqReport(); }
   else if(a === 'hq-archive'){
     if(!S.hq) return;
     const st = S.db.sites.find(x => x.id === b.dataset.site); if(!st) return;
@@ -1579,9 +1588,9 @@ document.addEventListener('click', e => {
   else if(a === 'new'){
     if(S.role === 'staff' && !S.me){ toast('먼저 오른쪽 위에서 내 이름을 선택하세요'); $('#me-select').focus(); return; }
     S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
-  else if(a === 'report'){ if(!S.canManage) return; S.panel = 'report'; render(); $('#detail').scrollIntoView({block:'start'}); }
-  else if(a === 'report-print'){ if(S.canManage) printReport(); }
-  else if(a === 'report-csv'){ if(S.canManage) reportCSV(); }
+  else if(a === 'report'){ if(!S.canManage && !S.exec) return; S.panel = 'report'; render(); $('#detail').scrollIntoView({block:'start'}); }
+  else if(a === 'report-print'){ if(S.canManage || S.exec) printReport(); }
+  else if(a === 'report-csv'){ if(S.canManage || S.exec) reportCSV(); }
   else if(a === 'settings'){ if(!S.canManage) return; S.panel = 'settings'; render(); $('#detail').scrollIntoView({block:'nearest'}); }
   else if(a === 'cancel'){ S.panel = null; render(); }
   else if(a === 'copy'){ copyText(b.dataset.text); }
@@ -1681,11 +1690,11 @@ function enterSite(id, fromHistory, selectId){
   S.site = id; lsSet('site', id);
   S.panel = null; S.selectedId = null; S.filter = 'open'; S.q = '';
   S.role = 'manager'; lsSet('role', 'manager');
-  deriveSite();
+  deriveSite(); applyAccount();
   if(selectId && S.complaints.some(c => c.id === selectId)){ S.selectedId = selectId; const c = find(selectId); if(c && c.status === 'replied') S.filter = 'all'; }
   resetDetail(); window.scrollTo({top:0});
 }
-$('#site-select').addEventListener('change', e => { if(!S.hq) return; if(e.target.value) enterSite(e.target.value); else goHq(); });
+$('#site-select').addEventListener('change', e => { if(!S.allSites) return; if(e.target.value) enterSite(e.target.value); else goHq(); });
 function goHq(){ S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
 const isNarrow = () => matchMedia('(max-width:820px)').matches;
 function closeSheet(){ if(S.panel === 'hq') return; S.panel = null; S.selectedId = null; render(); }
@@ -1710,8 +1719,8 @@ window.addEventListener('popstate', e => {
   const v = e.state && e.state.view; if(!v || (SERVER && !S.user)) return;
   restoring = true;
   try{
-    if(S.hq && v.site && v.site !== S.site && S.db.sites.some(x => x.id === v.site)){ S.site = v.site; lsSet('site', v.site); deriveSite(); }
-    S.panel = v.panel === 'hq' && !S.hq ? null : v.panel;
+    if(S.allSites && v.site && v.site !== S.site && S.db.sites.some(x => x.id === v.site)){ S.site = v.site; lsSet('site', v.site); deriveSite(); }
+    S.panel = v.panel === 'hq' && !S.allSites ? null : v.panel;
     S.selectedId = v.sel && S.complaints.some(c => c.id === v.sel) ? v.sel : null;
     if(v.role === 'staff' || (v.role === 'manager' && S.canManage)) { S.role = v.role; lsSet('role', S.role); }
     const dlg = $('#popup');
@@ -1724,8 +1733,8 @@ window.addEventListener('resize', () => { if(document.body.classList.contains('s
 try{ history.replaceState(null, ''); }catch(e){}   // 새로 고침 뒤에는 처음 화면부터 기록
 document.addEventListener('change', e => { if(e.target.id === 'hq-month' && e.target.value){ S.hqMonth = e.target.value; resetDetail(); } });
 document.addEventListener('change', e => {
-  if(e.target.id === 'u-role'){ const st = $('#u-site'); if(e.target.value === 'hq') st.value = ''; else if(!st.value) st.selectedIndex = 1; }
-  if(e.target.id === 'u-site'){ const r = $('#u-role'); if(!e.target.value) r.value = 'hq'; else if(r.value === 'hq') r.value = 'manager'; }
+  if(e.target.id === 'u-role'){ const st = $('#u-site'); if(e.target.value !== 'manager') st.value = ''; else if(!st.value) st.selectedIndex = 1; }
+  if(e.target.id === 'u-site'){ const r = $('#u-role'); if(!e.target.value){ if(r.value === 'manager') r.value = 'hq'; } else if(r.value !== 'manager') r.value = 'manager'; }
 });
 $('#me-select').addEventListener('change', e => { S.me = e.target.value || null; lsSet('meStaff', S.me || ''); S.selectedId = null; render(); });
 
@@ -1806,7 +1815,7 @@ document.addEventListener('submit', e => {
   else if(f.id === 'f-user'){
     if(!S.hq) return;
     const email = val('u-email').toLowerCase(), pw = document.getElementById('u-pw').value.trim(), role = val('u-role'), site = val('u-site'), name = val('u-name');
-    if(role !== 'hq' && !site){ toast('관리소장은 사업장을 골라야 합니다. 본사 담당자면 역할을 「본사 담당자」로 바꾸세요'); return; }
+    if(role === 'manager' && !site){ toast('관리소장은 사업장을 골라야 합니다. 본사 담당자·임원이면 역할을 바꾸세요'); return; }
     if(pw && pw.length < 6){ toast('비밀번호는 6자 이상이어야 합니다'); return; }
     const exists = S.db.users.some(u => u.email === email);
     if(!pw && !exists){ toast('새 계정은 비밀번호가 필요합니다'); return; }
@@ -1816,10 +1825,10 @@ document.addEventListener('submit', e => {
         how = await store.createLogin(email, pw);
         if(how === 'exists') await store.resetPassword(email, pw);
       }
-      await store.saveUser({email, role, site:role === 'hq' ? null : site, name});
+      await store.saveUser({email, role, site:role === 'manager' ? site : null, name});
       if(how === 'unconfirmed') toast('계정은 만들었지만 Supabase의 Email → Confirm email 이 켜져 있어 로그인이 안 될 수 있습니다. 꺼 주세요.');
       return how;
-    }, `${email} → ${ROLE_LABEL[role]}${role === 'hq' ? '' : ' (' + siteName(site) + ')'}${pw ? ' · 비밀번호 설정됨' : ''}`);
+    }, `${email} → ${ROLE_LABEL[role]}${role === 'manager' ? ' (' + siteName(site) + ')' : ''}${pw ? ' · 비밀번호 설정됨' : ''}`);
   }
   else if(f.id === 'f-settings'){
     run(f, () => store.saveSettings({company:val('s-co') || COMPANY, buildingName:val('s-bname'), officePhone:val('s-tel'), defaultOrder:val('s-order')}), '저장했습니다');
@@ -1866,18 +1875,18 @@ async function onSignedIn(user){
     S.access = S.oldSchema ? {role:mgr ? 'manager' : 'staff', site_id:'main'} : {};
   }
   const a = S.access;
-  S.hq = a.role === 'hq';
-  if(S.hq){ S.site = lsGet('site') || 'main'; S.panel = 'hq'; }
+  S.hq = a.role === 'hq'; S.exec = a.role === 'exec'; S.allSites = S.hq || S.exec;
+  if(S.allSites){ S.site = lsGet('site') || 'main'; S.panel = 'hq'; }
   else if(a.site_id) S.site = a.site_id;
   if(a.role === 'staff'){ S.role = 'staff'; lsSet('role', 'staff'); }
   render();
   await reload();
-  if(S.hq && !S.db.sites.some(x => x.id === S.site && !x.archived)){ const f = S.db.sites.find(x => !x.archived); if(f){ S.site = f.id; deriveSite(); render(); } }
+  if(S.allSites && !S.db.sites.some(x => x.id === S.site && !x.archived)){ const f = S.db.sites.find(x => !x.archived); if(f){ S.site = f.id; deriveSite(); render(); } }
   subscribe();
   if(a.role === 'manager') offerMigration();
 }
 function onSignedOut(){
-  S.user = null; S.access = {}; S.hq = false; S.panel = null;
+  S.user = null; S.access = {}; S.hq = false; S.exec = false; S.allSites = false; S.panel = null;
   if(channel){ sb.removeChannel(channel); channel = null; }
   applyData(emptyData());
   photoCache.clear();

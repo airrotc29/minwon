@@ -4,6 +4,7 @@
 --
 -- 역할 (app_users 표에서 지정, 본사 담당자가 앱의 「본사」 화면에서 관리)
 --   hq      본사 담당자 : 모든 사업장을 보고 관리, 사업장·계정 관리
+--   exec    임원        : 모든 사업장을 열람만(민원 접수·지시·회신·설정·계정 변경 불가, 월간 보고 인쇄 가능)
 --   manager 관리소장    : 자기 사업장의 지시·회신·재작업·삭제·직원 명단·설정·월간 보고
 --   staff   직원        : 자기 사업장의 접수, 진행·완료 보고, 사진 올리기만
 --                        (아이디·비밀번호 없이 관리소장이 만든 '직원 접속 링크'로 들어온다 → staff_sessions)
@@ -55,7 +56,7 @@ create table if not exists public.user_roles (        -- 로그인한 사용자 
 );
 create table if not exists public.app_users (         -- 로그인 계정 → 역할·사업장
   email      text primary key,
-  role       text not null check (role in ('hq', 'manager', 'staff')),
+  role       text not null check (role in ('hq', 'exec', 'manager', 'staff')),
   site_id    text references public.sites(id),        -- hq 는 비움
   name       text,
   created_at timestamptz not null default now()
@@ -89,6 +90,8 @@ end $$;
 
 -- 2) 계정 ---------------------------------------------------------------
 -- 본사 담당자(총괄) 계정. 바꾸려면 이메일을 고쳐 다시 실행하거나 앱 「본사 → 계정 관리」에서 지정하세요.
+alter table public.app_users drop constraint if exists app_users_role_check;
+alter table public.app_users add constraint app_users_role_check check (role in ('hq', 'exec', 'manager', 'staff'));
 insert into public.app_users(email, role, site_id, name) values ('boss-hq@sunmin.kr', 'hq', null, '본사'), ('airrotc29@naver.com', 'hq', null, '본사')
   on conflict (email) do update set role = 'hq', site_id = null;
 
@@ -193,9 +196,13 @@ create or replace function public.is_hq()
 returns boolean language sql stable security definer set search_path = public as $$
   select coalesce(public.my_role() = 'hq', false);
 $$;
+create or replace function public.is_exec()              -- 임원: 전체 열람만
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.my_role() = 'exec', false);
+$$;
 create or replace function public.can_view(sid text)
 returns boolean language sql stable security definer set search_path = public as $$
-  select public.is_hq() or (public.my_site() is not null and public.my_site() = sid);
+  select public.is_hq() or public.is_exec() or (public.my_site() is not null and public.my_site() = sid);
 $$;
 create or replace function public.can_manage(sid text)
 returns boolean language sql stable security definer set search_path = public as $$
@@ -247,7 +254,7 @@ create or replace function public.add_complaint(cid text, cdata jsonb, evs jsonb
 returns void language plpgsql security definer set search_path = public as $$
 declare v_site text;
 begin
-  if my_role() is null then raise exception 'forbidden'; end if;
+  if my_role() is null or is_exec() then raise exception 'forbidden'; end if;
   v_site := coalesce(sid, my_site());
   if v_site is null then raise exception 'site required'; end if;
   if not can_view(v_site) then raise exception 'forbidden'; end if;
@@ -269,7 +276,7 @@ declare v_site text;
 begin
   select site_id into v_site from complaints where id = cid;
   if not found then raise exception 'gone'; end if;
-  if not can_view(v_site) then raise exception 'forbidden'; end if;
+  if not can_view(v_site) or is_exec() then raise exception 'forbidden'; end if;
   if not can_manage(v_site) then
     if ev is null or ev->>'type' not in ('progress', 'done') then raise exception 'forbidden'; end if;
     if exists (select 1 from jsonb_object_keys(coalesce(patch, '{}'::jsonb)) k
@@ -297,7 +304,7 @@ end $$;
 do $$
 declare f text;
 begin
-  foreach f in array array['my_access()', 'my_role()', 'my_site()', 'is_hq()', 'can_view(text)', 'can_manage(text)', 'is_manager()',
+  foreach f in array array['my_access()', 'my_role()', 'my_site()', 'is_hq()', 'can_view(text)', 'can_manage(text)', 'is_manager()', 'is_exec()',
                            'add_complaint(text, jsonb, jsonb, text)', 'apply_action(text, jsonb, jsonb)', 'merge_settings(jsonb, text)',
                            'rotate_staff_link(text)', 'claim_staff_link(text)', 'set_login_password(text, text)', 'remove_login(text)', 'touch_access()'] loop
     execute format('revoke execute on function public.%s from public, anon', f);
@@ -331,7 +338,7 @@ create policy "사진 보기"   on storage.objects for select to authenticated
   using (bucket_id = 'photos' and (public.is_hq() or exists (
     select 1 from public.complaints c where c.id = split_part(name, '/', 1) and public.can_view(c.site_id))));
 create policy "사진 올리기" on storage.objects for insert to authenticated
-  with check (bucket_id = 'photos' and public.my_role() is not null);
+  with check (bucket_id = 'photos' and public.my_role() in ('hq', 'manager', 'staff'));
 create policy "사진 바꾸기" on storage.objects for update to authenticated using (bucket_id = 'photos' and public.is_manager());
 create policy "사진 지우기" on storage.objects for delete to authenticated using (bucket_id = 'photos' and public.is_manager());
 
