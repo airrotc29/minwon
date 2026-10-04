@@ -820,10 +820,23 @@ function reportView(){
 function currentReportMeta(){
   return {to:val('mr-to'), from:val('mr-from'), note:val('mr-note'), plan:val('mr-plan')};
 }
+/* 인쇄 / PDF 저장. 카카오톡·네이버 등 앱 안의 브라우저는 인쇄를 막아 두므로 크롬에서 열도록 안내한다 */
+function safePrint(){
+  if(inAppBrowser){ showPrintHelp(); return; }
+  try{ window.print(); }catch(e){ showPrintHelp(); }
+}
+function showPrintHelp(){
+  const dlg = $('#popup'); dlg.dataset.k = '';
+  $('#popup-title').textContent = '인쇄 / PDF 저장은 크롬에서 해 주세요';
+  $('#popup-body').innerHTML = `<p>지금 열려 있는 ${inKakao ? '카카오톡' : '앱'} 안의 브라우저는 인쇄와 PDF 저장을 지원하지 않습니다.</p>
+    <p class="hint">휴대폰의 크롬(또는 삼성 인터넷)에서 열면 <b>⋮ → 공유·인쇄 → PDF로 저장</b>으로 파일을 만들 수 있습니다. 크롬에서는 한 번 더 로그인해야 합니다.</p>
+    <div class="btns"><button type="button" class="btn primary" data-act="open-browser">크롬(기본 브라우저)에서 열기</button><button type="button" class="btn" data-act="popup-close">닫기</button></div>`;
+  if(!dlg.open) dlg.showModal();
+}
 function printReport(){
   const area = $('#print-area');
   area.innerHTML = reportHTML(S.reportMonth, currentReportMeta());
-  window.print();
+  safePrint();
 }
 /* 민원 목록을 엑셀에서 열리는 CSV 로 저장 (names: 직원 명단 — 백업 파일을 볼 때는 그 파일의 명단) */
 function complaintsCSV(list, filename, names){
@@ -1198,7 +1211,7 @@ function openKpiPopup(k){
 }
 function printHqReport(){
   $('#print-area').innerHTML = hqReportHTML(S.hqMonth);
-  window.print();
+  safePrint();
 }
 
 function settingsView(){
@@ -1701,7 +1714,7 @@ function closeSheet(){ if(S.panel === 'hq') return; S.panel = null; S.selectedId
 /* ---------- 브라우저 기록: 화면이 바뀔 때마다 한 칸 쌓아, 뒤로 가기가 항상 직전 화면으로 ----------
    화면 = 사업장 + 열린 패널(접수/설정/보고/본사) + 선택한 민원 + 역할 + 열린 팝업. 필터·검색어는 화면으로 치지 않는다. */
 let restoring = false;
-const viewSnap = () => ({site:S.site, panel:S.panel, sel:S.selectedId, role:S.role, popup:$('#popup').open ? $('#popup').dataset.k : null});
+const viewSnap = () => ({site:S.site, panel:S.panel, sel:S.selectedId, role:S.role, popup:$('#popup').open ? ($('#popup').dataset.k || null) : null});
 function syncHistory(){
   if(restoring || (SERVER && !S.user)) return;
   const v = viewSnap(), cur = history.state && history.state.view;

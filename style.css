@@ -275,6 +275,7 @@ body.need-login .foot{display:none}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   /* 회사명·상표를 모든 쪽 하단 중앙에(쪽 여백 상자). 지원하지 않는 브라우저는 본문 끝의 .r-foot이 대신 보인다 */
   .r-foot{display:none}
+  html,body{overflow:visible!important;height:auto!important}
 }
 
 /* 본사 화면 */
@@ -481,3 +482,5 @@ body.need-login .install,body.no-access .install{display:none!important}
 body.readonly #detail form:not(#f-monthly),body.readonly #detail details.more,body.readonly #detail [data-act=del],body.readonly #detail [data-act=share],body.readonly #detail .act .btns .danger{display:none!important}
 body.readonly #f-monthly.ro .fld:not(:first-child),body.readonly #f-monthly.ro button[type=submit],body.readonly #f-monthly.ro .hint{display:none}
 body.readonly #staff-picker{display:none!important}
+.popup-body p{margin:0 0 12px;line-height:1.6}
+.popup-body .btns{margin-top:16px}
