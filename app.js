@@ -300,8 +300,8 @@ const clone = o => JSON.parse(JSON.stringify(o));
  * 휴대폰 사진은 올리기 전에 줄인다(긴 변 1280px, JPEG).
  * 서버 사용 시 Supabase Storage의 photos 버킷(비공개)에, 아니면 이 기기(IndexedDB)에 저장한다.
  * 처리 내역(event)에는 사진 위치만 photos:[...]로 남긴다. */
-const PHOTO_MAX = 1280, PHOTO_Q = 0.72, PHOTO_LIMIT = 6;
-const PHOTO_AVG_MB = 0.15, STORAGE_FREE_MB = 1024;   // 무료 요금제 사진 저장 한도 1GB
+const PHOTO_MAX = 1600, PHOTO_Q = 0.8, PHOTO_LIMIT = 6;      // 올리는 사진: 긴 변 1600px
+const PHOTO_AVG_MB = 0.25, STORAGE_FREE_MB = 1024;   // 무료 요금제 사진 저장 한도 1GB
 let pendingPhotos = [];              // 아직 올리지 않은 선택 사진 {blob, url}
 const photoCache = new Map();        // 사진 위치 → 화면용 주소
 
@@ -1588,6 +1588,7 @@ function wrapLines(ctx, text, maxW){
   return out;
 }
 async function buildReplyCard(text, files, c){
+  const K = 2;                                   // 2배 해상도로 그려 글자·사진을 선명하게
   const W = 1080, P = 64, FW = W - P * 2, font = '"IBM Plex Sans KR","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif';
   const imgs = [];
   for(const f of files.slice(0, 4)){ try{ imgs.push(await createImageBitmap(f)); }catch(e){} }
@@ -1598,7 +1599,7 @@ async function buildReplyCard(text, files, c){
   const headH = 170, textH = lines.length * LH + 40;
   const photoHs = imgs.map(im => Math.min(1300, Math.round(im.height * FW / im.width)));
   const H = headH + 48 + textH + photoHs.reduce((a, h) => a + h + 28, 0) + 36;
-  cv.width = W; cv.height = H;
+  cv.width = W * K; cv.height = H * K; ctx.scale(K, K); ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
   // 머리띠
   ctx.fillStyle = '#1E3A7B'; ctx.fillRect(0, 0, W, headH);
@@ -1619,7 +1620,7 @@ async function buildReplyCard(text, files, c){
     ctx.strokeStyle = '#D3D9E5'; ctx.lineWidth = 2; ctx.strokeRect(P, y, FW, h);
     y += h + 28;
   });
-  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.88));
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
   const name = `회신_${(c.location || '민원').replace(/\s+/g, '')}.jpg`;
   return new File([blob], name, {type:'image/jpeg'});
 }
