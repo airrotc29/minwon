@@ -297,3 +297,4 @@ body.no-access .tools,body.no-access .summary,body.no-access .work,body.no-acces
 .install > div:first-child{display:flex;flex-direction:column;gap:2px;min-width:0}
 .install .hint{font-size:13px}
 body.need-login .install,body.no-access .install{display:none!important}
+.panel-in{border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-top:10px;display:flex;flex-direction:column;gap:10px}

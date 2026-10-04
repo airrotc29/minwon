@@ -809,21 +809,66 @@ function printReport(){
   area.innerHTML = reportHTML(S.reportMonth, currentReportMeta());
   window.print();
 }
-function reportCSV(){
-  const ym = S.reportMonth, d = reportData(ym), nums = numbers();
+/* 민원 목록을 엑셀에서 열리는 CSV 로 저장 (names: 직원 명단 — 백업 파일을 볼 때는 그 파일의 명단) */
+function complaintsCSV(list, filename, names){
+  const nameOf = id => { if(!id) return ''; const st = (names || S.db.staff).find(x => x.id === id); return st ? st.name : staffName(id); };
+  const sorted = [...list].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
   const rows = [['번호', '접수일시', '동', '호', '위치', '분류', '접수경로', '긴급', '제목', '내용', '접수자', '담당', '처리기한', '상태', '완료보고일', '처리내용', '회신일', '회신방법']];
-  d.recv.forEach(c => {
+  sorted.forEach((c, i) => {
     const done = lastEv(c, 'done'), rep = lastEv(c, 'replied');
-    rows.push([nums[c.id], fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
-      c.title || '', c.detail || '', receiver(c) || '관리소장', c.assignee ? staffName(c.assignee) : '', c.due || '', ST[c.status] ? ST[c.status].label : c.status,
+    rows.push([i + 1, fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
+      c.title || '', c.detail || '', (c.receivedBy && c.receivedBy !== 'manager') ? nameOf(c.receivedBy) : '관리소장', nameOf(c.assignee), c.due || '', ST[c.status] ? ST[c.status].label : c.status,
       done ? fmt(done.at) : '', done ? done.text || '' : '', rep ? fmt(rep.at) : '', rep ? rep.method || '' : '']);
   });
   const csv = '﻿' + rows.map(r => r.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
-  a.download = `민원_${ym}.csv`;
+  a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function reportCSV(){ complaintsCSV(reportData(S.reportMonth).recv, `민원_${S.reportMonth}.csv`); }
+
+/* 엑셀(.xlsx) 백업: 민원 · 처리 내역 · 직원 명단 세 시트. 엑셀 도구를 못 받으면 CSV 로 대신 저장 */
+let xlsxLib = null;
+function loadXLSX(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(xlsxLib) return xlsxLib;
+  xlsxLib = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; sc.onload = () => res(window.XLSX); sc.onerror = () => { xlsxLib = null; rej(new Error('xlsx')); }; document.head.appendChild(sc); });
+  return xlsxLib;
+}
+function complaintRows(list, names){
+  const nameOf = id => { if(!id) return ''; const st = (names || S.db.staff).find(x => x.id === id); return st ? st.name : staffName(id); };
+  const sorted = [...list].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  const main = [['번호', '접수일시', '동', '호', '위치', '분류', '접수경로', '긴급', '제목', '내용', '접수자', '담당', '처리기한', '상태', '완료보고일', '처리내용', '회신일', '회신방법', '사진수']];
+  const evs = [['민원번호', '일시', '구분', '담당/작성', '내용', '처리기한', '알린방법', '사진수']];
+  sorted.forEach((c, i) => {
+    const done = lastEv(c, 'done'), rep = lastEv(c, 'replied');
+    main.push([i + 1, fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
+      c.title || '', c.detail || '', (c.receivedBy && c.receivedBy !== 'manager') ? nameOf(c.receivedBy) : '관리소장', nameOf(c.assignee), c.due || '', ST[c.status] ? ST[c.status].label : c.status,
+      done ? fmt(done.at) : '', done ? done.text || '' : '', rep ? fmt(rep.at) : '', rep ? rep.method || '' : '', photoCount(c)]);
+    (c.events || []).forEach(e => evs.push([i + 1, fmt(e.at), LOG_LABEL[e.type] || e.type, e.staffId ? nameOf(e.staffId) : '관리소장', e.text || '', e.due || '', e.method || '', (e.photos || []).length]));
+  });
+  return {main, evs};
+}
+const LOG_LABEL = {received:'접수', assigned:'지시', reassigned:'담당 변경', rework:'재작업 지시', progress:'진행 보고', done:'완료 보고', notice:'중간 안내', replied:'회신 완료'};
+async function exportXLSX(list, names, settings, filename){
+  const {main, evs} = complaintRows(list, names);
+  const staffRows = [['이름', '담당 업무']].concat((names || S.db.staff).map(st => [st.name || '', st.duty || '']));
+  try {
+    const X = await loadXLSX();
+    const wb = X.utils.book_new();
+    const add = (rows, name, widths) => { const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = widths.map(w => ({wch:w})); X.utils.book_append_sheet(wb, ws, name); };
+    add(main, '민원', [5, 16, 6, 6, 14, 10, 8, 5, 24, 30, 10, 10, 11, 8, 16, 30, 16, 8, 6]);
+    add(evs, '처리내역', [8, 16, 10, 10, 40, 11, 10, 6]);
+    add(staffRows, '직원', [12, 16]);
+    add([['항목', '값'], ['사업장', (settings && settings.buildingName) || siteName()], ['회사', (settings && settings.company) || COMPANY], ['백업 일시', fmt(now())], ['민원 수', list.length]], '정보', [12, 40]);
+    X.writeFile(wb, filename.replace(/\.(csv|json)$/i, '') + '.xlsx');
+  } catch(e){
+    console.error(e);
+    toast('엑셀 도구를 불러오지 못해 CSV 파일로 저장합니다 (엑셀에서 열립니다)');
+    complaintsCSV(list, filename.replace(/\.(xlsx|json)$/i, '') + '.csv', names);
+  }
 }
 
 /* ---------- 본사 화면 (hq 계정 전용) ---------- */
@@ -967,11 +1012,30 @@ function settingsView(){
     <h3>데이터 백업</h3>
     <p class="hint">${SERVER ? '민원 기록은 서버에 저장됩니다. 만일에 대비해 한 달에 한 번쯤 백업 파일을 받아 두세요. 백업을 불러오면 서버 기록에 합쳐집니다(사진은 백업에 들어가지 않습니다).' : '민원 기록은 이 기기의 브라우저에 저장됩니다. 브라우저 기록을 지우면 함께 지워지니 정기적으로 백업 파일을 받아 두세요.'}</p>
     <div class="btns">
-      <button type="button" class="btn" data-act="export">백업 파일 받기</button>
-      <label class="btn">백업 불러오기<input type="file" id="import-file" accept="application/json,.json" hidden></label>
+      <button type="button" class="btn primary" data-act="export-xlsx">엑셀 파일로 백업받기</button>
+      <button type="button" class="btn" data-act="export">복원용 파일 받기 (.json)</button>
+      <label class="btn">복원용 파일 열어보기<input type="file" id="view-file" accept="application/json,.json" hidden></label>
+      <label class="btn">복원용 파일 불러오기<input type="file" id="import-file" accept="application/json,.json" hidden></label>
     </div>
+    <p class="hint"><b>엑셀 파일</b>(민원·처리내역·직원 시트)은 나중에 열어 보고 인쇄하기 좋습니다. <b>복원용 파일(.json)</b>은 서버에 다시 넣을 때 쓰는 저장용이라 그냥 열면 읽기 어렵고, 「열어보기」로 내용을 확인할 수 있습니다.</p>
+    ${backupPreview()}
   </div>
   <div class="btns"><button type="button" class="btn" data-act="cancel">닫기</button></div>`;
+}
+/* 백업 파일 열어보기: 서버에 넣지 않고 내용만 표로 보여 준다 */
+function backupPreview(){
+  const b = S.backup; if(!b) return '';
+  const list = [...(b.data.complaints || [])].sort((x, y) => (y.createdAt || '').localeCompare(x.createdAt || ''));
+  const names = b.data.staff || [];
+  const nameOf = id => { const st = names.find(x => x.id === id); return st ? st.name : (id ? '?' : '-'); };
+  const dates = list.map(c => c.createdAt).filter(Boolean).sort();
+  return `<div class="panel-in">
+    <div class="conn"><span><b>${esc(b.name)}</b></span><span class="hint">민원 ${list.length}건 · 직원 ${names.length}명${dates.length ? ` · ${fmtDate(ymd(new Date(dates[0])))} ~ ${fmtDate(ymd(new Date(dates[dates.length - 1])))}` : ''}${b.data.settings && b.data.settings.buildingName ? ' · ' + esc(b.data.settings.buildingName) : ''}</span></div>
+    <div class="btns"><button type="button" class="btn" data-act="backup-csv">이 파일을 엑셀로 변환</button><button type="button" class="btn" data-act="backup-import">이 파일을 서버에 합치기</button><span class="spacer"></span><button type="button" class="btn sm" data-act="backup-close">닫기</button></div>
+    ${list.length ? `<div class="tscroll"><table class="rtable"><thead><tr><th>접수일</th><th>동·호수</th><th>분류</th><th>민원 내용</th><th>담당</th><th>상태</th><th>처리 내용</th></tr></thead><tbody>
+      ${list.map(c => { const d = lastEv(c, 'done'); return `<tr><td>${fmt(c.createdAt)}</td><td>${esc(c.location || '')}</td><td>${esc(c.category || '')}</td><td>${c.urgent ? '<b class="r-urg">[긴급]</b> ' : ''}${esc(c.title || '')}</td><td>${esc(nameOf(c.assignee))}</td><td>${esc(ST[c.status] ? ST[c.status].label : c.status || '')}</td><td>${esc(d ? d.text || '' : '')}</td></tr>`; }).join('')}
+    </tbody></table></div>` : '<p class="hint">민원이 없는 파일입니다.</p>'}
+  </div>`;
 }
 
 /* 사진 저장 용량(무료 1GB) 어림값: 사진 장수 × 평균 크기 */
@@ -1309,6 +1373,16 @@ document.addEventListener('click', e => {
   else if(a === 'viewer-close'){ $('#viewer').close(); }
   else if(a === 'del-staff'){ run(null, () => store.removeStaff(b.dataset.id), '직원을 명단에서 뺐습니다'); }
   else if(a === 'logo-clear'){ try { localStorage.removeItem(LOGO_KEY); } catch(e){} S.logo = ''; toast('이 기기 로고를 지웠습니다'); resetDetail(); }
+  else if(a === 'export-xlsx'){ exportXLSX(S.complaints, S.db.staff.filter(x => siteOf(x) === S.site), S.settings, `민원백업_${siteName() || '사업장'}_${ymd(new Date())}`); }
+  else if(a === 'backup-csv'){ if(S.backup) exportXLSX(S.backup.data.complaints || [], S.backup.data.staff || [], S.backup.data.settings, S.backup.name); }
+  else if(a === 'backup-close'){ S.backup = null; resetDetail(); }
+  else if(a === 'backup-import'){
+    if(!S.backup) return;
+    const d = S.backup.data;
+    if(!confirm(SERVER ? `민원 ${d.complaints.length}건이 든 백업을 서버 기록에 합칠까요? 같은 민원은 백업 내용으로 덮어씁니다.` : `민원 ${d.complaints.length}건이 든 백업으로 지금 데이터를 바꿀까요?`)) return;
+    S.selectedId = null; S.backup = null;
+    run(null, () => store.importBackup(d), '백업을 불러왔습니다');
+  }
   else if(a === 'export'){
     const blob = new Blob([JSON.stringify(snapshot(), null, 2)], {type:'application/json'});
     const link = document.createElement('a');
@@ -1348,6 +1422,16 @@ document.addEventListener('change', async e => {
   if(e.target.id === 'logo-file' && e.target.files[0]){
     try { const data = await readImage(e.target.files[0], 400); if(!lsSet(LOGO_KEY, data)) throw 0; S.logo = data; toast('로고를 바꿨습니다'); resetDetail(); }
     catch(err){ toast('이미지를 읽지 못했습니다'); }
+  }
+  if(e.target.id === 'view-file' && e.target.files[0]){
+    try {
+      const d = JSON.parse(await e.target.files[0].text());
+      if(!Array.isArray(d.complaints)) throw new Error('형식');
+      S.backup = {name:e.target.files[0].name, data:d}; resetDetail();
+      setTimeout(() => { const el = document.querySelector('.panel-in'); if(el) el.scrollIntoView({block:'start', behavior:'smooth'}); }, 50);
+    } catch(err){ toast('백업 파일을 읽지 못했습니다'); }
+    finally { e.target.value = ''; }
+    return;
   }
   if(e.target.id === 'import-file' && e.target.files[0]){
     try {
