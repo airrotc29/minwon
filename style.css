@@ -290,3 +290,9 @@ body.no-access .tools,body.no-access .summary,body.no-access .work,body.no-acces
 .linktext{display:block;font-family:var(--mono);font-size:12px;word-break:break-all;background:var(--sunk);padding:8px 10px;border-radius:6px}
 .nowrap{white-space:nowrap}
 #no-access .msg strong{display:block;font-size:16px;color:var(--ink);margin-bottom:6px}
+
+/* 홈 화면 아이콘 안내 */
+.install{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;background:var(--surface);border:1px solid var(--accent);border-radius:var(--r);padding:10px 14px;font-size:14px}
+.install > div:first-child{display:flex;flex-direction:column;gap:2px;min-width:0}
+.install .hint{font-size:13px}
+body.need-login .install,body.no-access .install{display:none!important}

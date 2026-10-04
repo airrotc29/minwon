@@ -458,8 +458,28 @@ function applyAccount(){
   if(st) S.me = st.id;
 }
 
+/* 홈 화면(바탕화면) 아이콘 안내: 직원 링크로 들어온 기기, 또는 설치 가능한 브라우저에서 */
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderInstall(); });
+window.addEventListener('appinstalled', () => { installEvt = null; lsSet('installDone', '1'); renderInstall(); });
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function renderInstall(){
+  const el = $('#install'); if(!el) return;
+  const linkStaff = SERVER && S.user && !S.user.email && S.access && S.access.role === 'staff';
+  const show = S.user && !standalone() && !lsGet('installDismiss') && !lsGet('installDone') && (linkStaff || installEvt);
+  el.hidden = !show;
+  if(!show) return;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const how = installEvt ? '<button type="button" class="btn primary" data-act="install">앱으로 설치</button>'
+    : ios ? '사파리 아래 <b>공유 버튼(⬆)</b> → <b>홈 화면에 추가</b>'
+    : '브라우저 메뉴(<b>⋮</b>) → <b>홈 화면에 추가</b>(또는 앱 설치)';
+  el.innerHTML = `<div><b>바탕화면에 아이콘 만들기</b><span class="hint">다음부터는 ${linkStaff ? '링크나 QR 없이 ' : ''}아이콘만 누르면 바로 열립니다.</span></div>
+    <div class="btns">${how}<button type="button" class="btn sm" data-act="install-later">나중에</button></div>`;
+}
+
 function render(){
   renderBrand();
+  renderInstall();
   renderSync();
   /* 직원 링크로 들어왔는데 연결에 실패한 경우: 로그인 화면 대신 이유를 보여준다 */
   const linkFail = SERVER && S.authReady && !S.user && !!S.linkError;
@@ -957,13 +977,13 @@ function staffLinkSection(){
   const link = staffLink();
   return `<div class="sec act">
     <h3>직원 접속 링크</h3>
-    <p class="hint">직원은 아이디·비밀번호 없이 이 링크(또는 QR)를 휴대폰에서 한 번 열면 <b>${esc(siteName())}</b> 직원 화면이 열리고, 그 뒤로는 그 휴대폰에서 계속 유지됩니다. 직원이 바뀌면 <b>링크 새로 만들기</b>를 누르세요. 예전 링크로 들어온 휴대폰은 그 즉시 막힙니다.</p>
+    <p class="hint">직원은 아이디·비밀번호 없이 이 링크(또는 QR)를 휴대폰에서 <b>처음 한 번만</b> 열면 <b>${esc(siteName())}</b> 직원 화면이 열립니다. 열린 화면에서 <b>바탕화면에 아이콘 만들기</b> 안내를 따라 두면, 다음부터는 링크나 QR 없이 아이콘만 눌러 들어옵니다. 직원이 바뀌면 <b>링크 새로 만들기</b>를 누르세요. 예전 링크로 들어온 휴대폰·아이콘은 그 즉시 막힙니다.</p>
     ${link ? `<div class="linkbox">
         <canvas id="staff-qr" width="180" height="180" aria-label="직원 접속 QR"></canvas>
         <div class="linkside">
           <code class="linktext" id="staff-link">${esc(link)}</code>
           <div class="btns"><button type="button" class="btn" data-act="link-copy">링크 복사</button><button type="button" class="btn kakao" data-act="link-share">카톡으로 보내기</button></div>
-          <p class="hint">직원 휴대폰 카메라로 QR을 찍거나, 카톡으로 보낸 링크를 누르면 됩니다.</p>
+          <p class="hint">직원 휴대폰 카메라로 QR을 찍거나, 카톡으로 보낸 링크를 누르면 됩니다. PC에서 쓰려면 같은 링크를 PC 브라우저에서 열고 즐겨찾기(Ctrl+D)에 넣어 두면 됩니다.</p>
         </div>
       </div>
       <div class="btns"><button type="button" class="btn danger" data-act="link-rotate">링크 새로 만들기 (예전 링크 무효)</button></div>`
@@ -1219,6 +1239,8 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b) return;
   const a = b.dataset.act;
   if(a === 'page-reload'){ location.reload(); }
+  else if(a === 'install'){ if(installEvt){ installEvt.prompt(); installEvt.userChoice.then(() => { installEvt = null; renderInstall(); }); } }
+  else if(a === 'install-later'){ lsSet('installDismiss', '1'); renderInstall(); }
   else if(a === 'hq'){ if(!S.hq) return; S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
   else if(a === 'hq-enter'){ if(!S.hq) return; enterSite(b.dataset.site); }
   else if(a === 'hq-print'){ if(S.hq) printHqReport(); }
@@ -1506,7 +1528,7 @@ async function boot(){
   /* 직원 접속 링크(#staff=토큰): 익명 로그인 뒤 이 기기를 그 사업장 직원으로 등록 */
   const m = location.hash.match(/^#staff=([A-Za-z0-9]{16,})$/);
   if(m){
-    history.replaceState(null, '', location.pathname + location.search);
+    // 주소의 #staff=… 는 일부러 남겨 둔다: 즐겨찾기나 홈 화면 아이콘으로 열어도 다시 연결되도록
     if(session && session.user.email){
       toast('이미 로그인된 계정이 있어 직원 링크를 적용하지 않았습니다. 직원 휴대폰에서 열어 주세요.');
     } else {
