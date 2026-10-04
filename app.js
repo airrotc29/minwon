@@ -1400,7 +1400,7 @@ function staffLinkSection(){
   const link = staffLink();
   return `<div class="sec act">
     <h3>직원 접속 링크</h3>
-    <p class="hint"><mark class="hl"><b>직원에게 아래 링크를 카톡으로 보내 주세요.</b></mark> 직원은 링크를 한 번 열면 <b>${esc(siteName())}</b> 직원 화면이 열리고, 화면 아래 <b>바탕화면에 추가</b>를 누르면 다음부터 아이콘으로 들어옵니다. <mark class="hl">직원이 바뀌면 <b>링크 새로 만들기</b>를 누르세요. 예전 링크는 바로 막힙니다.</mark></p>
+    <p class="hint"><mark class="hl"><b>직원에게 아래 링크를 카톡으로 보내 주세요.</b></mark> 직원은 링크를 한 번 열면 <b>${esc(siteName())}</b> 직원 화면이 열리고, 화면 아래 <b>바탕화면에 추가</b>를 누르면 다음부터 아이콘으로 들어옵니다. <mark class="hl">직원이 바뀌면 <b>링크 새로 만들기</b>를 누르시고 생성된 링크를 전 직원들에게 보내 주세요. 예전 링크는 바로 막힙니다.</mark></p>
     ${link ? `<code class="linktext" id="staff-link">${esc(link)}</code>
       <div class="btns">
         <button type="button" class="btn yellow" data-act="link-copy">링크 복사</button>
