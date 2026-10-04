@@ -576,3 +576,47 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 #exitask .btns{justify-content:flex-end;margin-top:8px}
 #exitask .btn{background:transparent;color:#fff;border-color:rgba(255,255,255,.35)}
 #exitask .btn.primary{background:#FFE15A;color:#141B2D;border-color:#FFE15A;font-weight:700}
+
+/* ---------- 상태 요약(새 구성) ---------- */
+.summary{flex-direction:column;align-items:stretch;gap:10px}
+.sbox{display:flex;flex-direction:column;gap:6px}
+.summary .search{max-width:none;margin-left:0}
+.mcap{font-size:12.5px;color:var(--muted);font-weight:600;margin:2px 2px 0}
+.mcap span{font-weight:400}
+.todo-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.todo-card{font:inherit;text-align:left;cursor:pointer;background:#FFF3B0;border:1.5px solid #E0B400;border-radius:14px;padding:10px 14px;color:#141B2D;display:flex;flex-direction:column;gap:0;position:relative;overflow:hidden}
+.todo-card small{font-size:12px;color:#6B5800;font-weight:600}
+.todo-card b{font-size:32px;line-height:1.15;color:#7A8193}
+.todo-card span{font-size:14.5px;font-weight:700}
+.todo-card.spark{background:#FFE15A;animation:spark-glow 1.6s ease-in-out infinite}
+.todo-card.spark b{color:#D01E12;animation:num-blink 1s steps(1,end) infinite}
+.todo-card.spark::after{content:"";position:absolute;top:-30%;bottom:-30%;left:-60%;width:40%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.85),transparent);transform:skewX(-20deg);animation:spark-shine 2.4s ease-in-out infinite;pointer-events:none}
+.todo-card[aria-pressed="true"]{outline:3px solid var(--accent);outline-offset:1px}
+.fflow{display:flex;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:5px}
+.fflow i{color:#9AA3B5;font-style:normal;font-size:15px;padding:0 1px}
+.fstep{flex:1;font:inherit;border:0;background:transparent;border-radius:9px;padding:5px 2px;cursor:pointer;color:var(--ink);text-align:center}
+.fstep b{display:block;font-size:19px;line-height:1.2}
+.fstep span{font-size:12px;color:var(--muted)}
+.fstep[aria-pressed="true"]{background:var(--accent)}
+.fstep[aria-pressed="true"] b,.fstep[aria-pressed="true"] span{color:var(--accent-ink)}
+.mtot{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mtot .sp{flex:1}
+.tlink{font:inherit;font-size:13px;background:transparent;border:1px solid transparent;border-radius:999px;padding:3px 10px;color:var(--muted);cursor:pointer}
+.tlink b{color:var(--ink)}
+.tlink.bad b{color:#D01E12}
+.tlink[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--surface)}
+/* 직원 탭 */
+.stabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px}
+.stab{font:inherit;border:0;background:transparent;border-radius:9px;padding:8px 4px;cursor:pointer;color:var(--ink);text-align:center}
+.stab b{display:block;font-size:22px;line-height:1.15}
+.stab span{font-size:12.5px}
+.stab[aria-pressed="true"]{background:#FFE15A;box-shadow:inset 0 0 0 1.5px #E0B400}
+.stab.hot b{color:#D01E12}
+.sline{display:flex;justify-content:flex-end}
+.slink{font:inherit;font-size:13px;background:transparent;border:0;color:var(--accent);cursor:pointer;padding:2px 4px;text-decoration:underline}
+.slink[aria-pressed="true"]{font-weight:700}
+@media (min-width:821px){
+  .summary{flex-direction:row;align-items:flex-start}
+  .sbox{flex:1}
+  .summary .search{max-width:280px;margin-top:22px}
+}

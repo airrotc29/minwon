@@ -504,11 +504,27 @@ function base(){
   if(S.role === 'staff') return S.me ? S.complaints.filter(c => assigneesOf(c).includes(S.me) || c.receivedBy === S.me) : [];
   return S.complaints;
 }
+/* 목록 거르기. 소장: 할 일 카드(지시할 것·회신할 것) + 흐름(지시됨·처리중·회신완료) + 미결·기한 초과·전체
+   직원: 탭(내 할 일·보고 완료·회신 끝) + 내가 접수한 민원 */
+const STAFF_F = ['todo', 'reported', 'replied', 'mine'];
+const isTodo = c => assigneesOf(c).includes(S.me) && (c.status === 'assigned' || c.status === 'progress') && !doneBy(c).has(S.me);
+const isReported = c => assigneesOf(c).includes(S.me) && (c.status === 'done' || (c.status === 'progress' && doneBy(c).has(S.me)));
+function matchFilter(c, f){
+  if(f === 'all') return true;
+  if(f === 'open') return c.status !== 'replied';
+  if(f === 'overdue') return isOverdue(c);
+  if(f === 'todo') return isTodo(c);
+  if(f === 'reported') return isReported(c);
+  if(f === 'mine') return c.receivedBy === S.me;
+  return c.status === f;
+}
+function fixFilter(){
+  if(S.role === 'staff'){ if(!STAFF_F.includes(S.filter)) S.filter = 'todo'; }
+  else if(STAFF_F.includes(S.filter) && S.filter !== 'replied') S.filter = 'open';
+}
 function filtered(){
-  let b = base();
-  if(S.role === 'staff' && S.filter === 'received') S.filter = 'open';       // 직원은 '지시 대기'를 쓰지 않는다(내가 접수한 건은 소장 지시를 기다릴 뿐)
-  if(S.filter === 'open') b = b.filter(c => c.status !== 'replied' && !(S.role === 'staff' && c.status === 'received'));
-  else if(S.filter !== 'all') b = b.filter(c => c.status === S.filter);
+  fixFilter();
+  let b = base().filter(c => matchFilter(c, S.filter));
   const q = S.q.trim();
   if(q) b = b.filter(c => [c.title, c.detail, c.location, c.category, assigneesOf(c).map(staffName).join(' ')].some(v => String(v || '').includes(q)));
   return b;
@@ -654,7 +670,7 @@ function render(){
 
   const waiting = S.complaints.filter(c => c.status === 'done').length;
   const al = $('#reply-alert');
-  al.hidden = !(S.role === 'manager' && waiting > 0) || hqPanel;
+  al.hidden = true;                 // '회신할 것' 카드가 같은 일을 하므로 띠는 숨김
   al.innerHTML = `<span>직원 완료 보고가 올라왔습니다. 민원인에게 결과를 알려 주세요.</span><span>회신 대기 <b>${waiting}</b>건</span>`;
 
   const warn = S.role !== 'manager' ? '' : (SERVER && !S.hq) ? '' : !SERVER ? '서버가 아직 설정되지 않아 이 기기에만 저장됩니다. README의 「서버 설정」 안내를 따라 주세요.'
@@ -666,21 +682,29 @@ function render(){
 }
 
 function renderSummary(){
-  const b = base();
-  const staffView = S.role === 'staff';
-  const cnt = k => k === 'all' ? b.length : k === 'open' ? b.filter(c => c.status !== 'replied' && !(staffView && c.status === 'received')).length : b.filter(c => c.status === k).length;
-  const keys = ['open', ...ORDER.filter(k => !(staffView && k === 'received')), 'all'];
+  fixFilter();
+  const b = base(), n = f => b.filter(c => matchFilter(c, f)).length;
   const searchVal = $('#q') ? $('#q').value : S.q;
   const hadFocus = document.activeElement && document.activeElement.id === 'q';
-  $('#summary').innerHTML = '<div class="chips" role="group" aria-label="상태별 보기">' + keys.map(k => {
-    const label = k === 'open' ? '미결' : k === 'all' ? '전체' : ST[k].chip;
-    const dot = ST[k] ? `<i class="dot s-${k}"></i>` : '';
-    const n = cnt(k);
-    const attn = ((k === 'done' || k === 'received') && S.role === 'manager' && n > 0) ? ' attn' : '';
-    // 지시 대기·회신 대기(소장 화면): 노란 바탕, 건수가 있으면 반짝이고 숫자가 빨갛게 깜빡
-    const wait = (k === 'received' || (k === 'done' && S.role === 'manager')) ? (n ? ' wait spark' : ' wait') : '';   // 지시 대기: 노란 바탕, 건수가 있으면 반짝임
-    return `<button type="button" class="chip${attn}${wait}${n ? '' : ' zero'}" data-act="filter" data-f="${k}" aria-pressed="${S.filter === k}">${dot}<span>${label}</span><b>${n}</b></button>`;
-  }).join('') + `</div><input type="text" id="q" class="search" placeholder="검색: 동호수·내용·담당" value="${esc(searchVal)}" aria-label="민원 검색">`;
+  const on = f => S.filter === f;
+  const btn = (f, cls, inner, label) => `<button type="button" class="${cls}" data-act="filter" data-f="${f}" aria-pressed="${on(f)}"${label ? ` aria-label="${esc(label)}"` : ''}>${inner}</button>`;
+  let html;
+  if(S.role === 'staff'){
+    const mine = n('mine');
+    html = `<div class="stabs" role="group" aria-label="내 민원 보기">
+      ${[['todo', '내 할 일'], ['reported', '보고 완료'], ['replied', '회신 끝']].map(([f, l]) => { const k = n(f); return btn(f, `stab${f === 'todo' && k ? ' hot' : ''}`, `<b>${k}</b><span>${l}</span>`); }).join('')}
+    </div>${mine ? `<div class="sline">${btn('mine', 'slink', `내가 접수한 민원 <b>${mine}</b>건 보기`)}</div>` : ''}`;
+  }else{
+    const card = (f, small, label) => { const k = n(f); return btn(f, `todo-card${k ? ' spark' : ''}`, `<small>${small}</small><b>${k}</b><span>${label}</span>`, `${label} ${k}건`); };
+    const step = (f, label) => btn(f, 'fstep', `<b>${n(f)}</b><span>${label}</span>`);
+    const od = n('overdue');
+    html = `<div class="mcap">소장님이 할 일</div>
+      <div class="todo-cards">${card('received', '새 민원', '지시할 것')}${card('done', '직원 완료 보고', '회신할 것')}</div>
+      <div class="mcap">진행 흐름 <span>(누르면 그 단계 목록)</span></div>
+      <div class="fflow">${step('assigned', '지시됨')}<i aria-hidden="true">›</i>${step('progress', '처리중')}<i aria-hidden="true">›</i>${step('replied', '회신완료')}</div>
+      <div class="mtot">${btn('open', 'tlink', `미결 <b>${n('open')}</b>`)}${btn('overdue', `tlink${od ? ' bad' : ''}`, `기한 초과 <b>${od}</b>`)}<span class="sp"></span>${btn('all', 'tlink', `전체 <b>${n('all')}</b> 보기`)}</div>`;
+  }
+  $('#summary').innerHTML = `<div class="sbox">${html}</div><input type="text" id="q" class="search" placeholder="검색: 동호수·내용·담당" value="${esc(searchVal)}" aria-label="민원 검색">`;
   if(hadFocus){ const q = $('#q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 }
 
@@ -1772,7 +1796,7 @@ document.addEventListener('click', e => {
     run(null, () => store.rotateStaffLink(), '직원 접속 링크를 만들었습니다');
   }
   else if(a === 'link-copy'){ copyText(staffLink()); }
-  else if(a === 'role'){ if(S.mgrOnly || (b.dataset.role === 'manager' && !S.canManage)) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
+  else if(a === 'role'){ if(S.mgrOnly || (b.dataset.role === 'manager' && !S.canManage)) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = S.role === 'staff' ? 'todo' : 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
   else if(a === 'open'){ S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
   else if(a === 'new'){
@@ -1964,7 +1988,7 @@ document.addEventListener('submit', e => {
       const id = uid();
       const photos = await uploadPending(id);
       if(photos.length) data.events[0].photos = photos;
-      await store.addComplaint(data, id); S.selectedId = id; S.panel = null; S.filter = 'open';
+      await store.addComplaint(data, id); S.selectedId = id; S.panel = null; S.filter = S.role === 'staff' ? 'mine' : 'received';
     }, msg);
   }
   else if(f.id === 'f-assign' && c){
