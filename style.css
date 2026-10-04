@@ -642,3 +642,25 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 .stab[aria-pressed="true"],.stab[aria-pressed="true"] span,.stab[aria-pressed="true"] b{color:#141B2D}
 .stab.hot[aria-pressed="true"] b{color:#D01E12}
 .todo-card,.todo-card span{color:#141B2D}
+
+/* ---------- 할 일 색 구분: 지시 = 파랑, 회신 = 초록 (본사 그래프 단계 색과 같음) ---------- */
+.k-received{--k-bg1:#DCEBFC;--k-bg2:#B9D5F7;--k-bd:#2a78d6;--k-bd2:#1B4E8C;--k-ink:#1B4E8C;--k-glow:rgba(42,120,214,.55);--k-row:rgba(42,120,214,.32)}
+.k-done{--k-bg1:#D2F1E2;--k-bg2:#A9E3C7;--k-bd:#1F9D6B;--k-bd2:#14724E;--k-ink:#14724E;--k-glow:rgba(31,157,107,.55);--k-row:rgba(31,157,107,.32)}
+.todo-card.k-received,.todo-card.k-done{background:var(--k-bg1);border-color:var(--k-bd)}
+.todo-card.k-received small,.todo-card.k-done small{color:var(--k-ink);display:flex;align-items:center;gap:5px}
+.todo-card small i{font-style:normal;font-size:14px}
+.todo-card.k-received.spark,.todo-card.k-done.spark{animation:k-glow 1.6s ease-in-out infinite}
+@keyframes k-glow{0%,100%{background:var(--k-bg1);box-shadow:0 0 0 0 transparent}50%{background:var(--k-bg2);box-shadow:0 0 14px 3px var(--k-glow)}}
+.todo-card.spark b{animation:num-soft 1s ease-in-out infinite}
+@keyframes num-soft{0%,100%{opacity:1}50%{opacity:.45}}
+.todo-card.spark::after{background:linear-gradient(100deg,transparent,rgba(255,255,255,.7),transparent)}
+.act.callout.k-received,.act.callout.k-done{animation:k-callout 1.2s ease-in-out infinite;border-color:var(--k-bd)}
+@keyframes k-callout{0%,100%{background:var(--k-bg1);border-color:var(--k-bd);box-shadow:0 0 0 0 transparent}50%{background:var(--k-bg2);border-color:var(--k-bd2);box-shadow:0 0 14px 3px var(--k-glow)}}
+.act.callout.k-received .hint,.act.callout.k-done .hint,.act.callout.k-received legend,.act.callout.k-done legend,.act.callout.k-received .fld > span,.act.callout.k-done .fld > span,.act.callout.k-received label.check,.act.callout.k-done label.check{color:var(--k-ink)}
+.act.callout.k-received textarea,.act.callout.k-received input[type=text],.act.callout.k-received input[type=date],.act.callout.k-received .chk span,.act.callout.k-received .btn:not(.primary):not(.kakao){border-color:#9DBFEA}
+.act.callout.k-done textarea,.act.callout.k-done input[type=text],.act.callout.k-done input[type=date],.act.callout.k-done .chk span,.act.callout.k-done .btn:not(.primary):not(.kakao){border-color:#8CCFB0}
+.act.callout.k-received .chk input:checked + span{background:#DCEBFC;border-color:#2a78d6}
+.row.blink.k-received,.row.blink.k-done{animation:k-row 1s ease-in-out infinite}
+@keyframes k-row{0%,100%{background:transparent;box-shadow:inset 5px 0 0 var(--k-bd)}50%{background:var(--k-row);box-shadow:inset 5px 0 0 var(--k-bd2)}}
+.act.callout .chk span::before{background:#fff;border-color:#7A8193}
+.act.callout .chk input:checked + span::before{background:var(--k-bd,#1E3A7B);border-color:var(--k-bd,#1E3A7B)}

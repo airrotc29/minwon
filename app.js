@@ -701,11 +701,11 @@ function renderSummary(){
       ${[['todo', '내 할 일'], ['reported', '보고 완료'], ['replied', '회신 끝']].map(([f, l]) => { const k = n(f); return btn(f, `stab${f === 'todo' && k ? ' hot' : ''}`, `<b>${k}</b><span>${l}</span>`); }).join('')}
     </div>${mine ? `<div class="sline">${btn('mine', 'slink', `내가 접수한 민원 <b>${mine}</b>건 보기`)}</div>` : ''}`;
   }else{
-    const card = (f, small, label) => { const k = n(f); return btn(f, `todo-card${k ? ' spark' : ''}`, `<small>${small}</small><b>${k}</b><span>${label}</span>`, `${label} ${k}건`); };
+    const card = (f, small, label, icon) => { const k = n(f); return btn(f, `todo-card k-${f}${k ? ' spark' : ''}`, `<small><i aria-hidden="true">${icon}</i>${small}</small><b>${k}</b><span>${label}</span>`, `${label} ${k}건`); };
     const step = (f, label) => btn(f, 'fstep', `<b>${n(f)}</b><span>${label}</span>`);
     const od = n('overdue');
     html = `<div class="mcap">소장님이 할 일</div>
-      <div class="todo-cards">${card('received', '새 민원', '지시해 주세요')}${card('done', '직원 완료 보고', '회신해 주세요')}</div>
+      <div class="todo-cards">${card('received', '새 민원', '지시해 주세요', '📋')}${card('done', '직원 완료 보고', '회신해 주세요', '💬')}</div>
       <div class="mcap">진행 흐름 <span>(누르면 그 단계 목록)</span></div>
       <div class="fflow">${step('assigned', '지시됨')}<i aria-hidden="true">›</i>${step('progress', '처리중')}<i aria-hidden="true">›</i>${step('replied', '회신완료')}</div>
       <div class="mtot">${btn('open', 'tlink', `미결 <b>${n('open')}</b>`)}${btn('overdue', `tlink${od ? ' bad' : ''}`, `기한 초과 <b>${od}</b>`)}<span class="sp"></span>${btn('all', 'tlink', `전체 <b>${n('all')}</b> 보기`)}</div>`;
@@ -734,7 +734,7 @@ function renderList(){
     return;
   }
   el.innerHTML = head + list.map(c => `
-    <button type="button" class="row${needsTap(c) ? ' blink' : ''}" data-act="open" data-id="${esc(c.id)}" aria-current="${S.selectedId === c.id && !S.panel}">
+    <button type="button" class="row${needsTap(c) ? ' blink k-' + c.status : ''}" data-act="open" data-id="${esc(c.id)}" aria-current="${S.selectedId === c.id && !S.panel}">
       <span class="l1"><span class="no">#${nums[c.id]}</span><span>${esc(c.category)}</span><span>${esc(c.location)}</span>${receiver(c) ? `<span>· ${esc(receiver(c))} 접수</span>` : ''}</span>
       <span class="t">${esc(c.title)}</span>
       <span class="l3"><span class="pill s-${c.status}">${ST[c.status].label}</span>
@@ -1514,14 +1514,14 @@ function managerActions(c){
       <div class="btns"><button type="submit" class="btn primary">지시 보내기</button></div>
     </form>`;
   if(c.status === 'received'){
-    html += `<div class="act callout">${assignForm('직원에게 지시', c.urgent ? ymd(new Date()) : '')}</div>`;
+    html += `<div class="act callout k-received">${assignForm('직원에게 지시', c.urgent ? ymd(new Date()) : '')}</div>`;
   }
   if(c.status === 'assigned' || c.status === 'progress'){
     html += `<details class="more" id="dt-assign"><summary>담당 변경 · 추가 지시</summary>${assignForm('')}</details>`;
   }
   if(c.status !== 'replied'){
     const final = c.status === 'done';
-    html += `<${final ? 'div class="act callout"' : 'details class="more" id="dt-notice"'}>
+    html += `<${final ? 'div class="act callout k-done"' : 'details class="more" id="dt-notice"'}>
       ${final ? '<h3>민원인에게 처리 결과 회신</h3>' : '<summary>민원인에게 중간 안내</summary>'}
       <form id="f-reply" class="sec" data-final="${final}">
         <p class="hint">문구를 고친 뒤 <b>카톡으로 보내기</b>(휴대폰)나 <b>문구 복사</b>로 보내고, 보낸 뒤 아래 버튼으로 기록하세요.</p>
