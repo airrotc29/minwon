@@ -1597,7 +1597,7 @@ async function buildReplyCard(text, files, c){
   const title = ($('#co-name') && $('#co-name').textContent.trim()) || COMPANY;
   const headH = 170, textH = lines.length * LH + 40;
   const photoHs = imgs.map(im => Math.min(1300, Math.round(im.height * FW / im.width)));
-  const H = headH + 48 + textH + photoHs.reduce((a, h) => a + h + 28, 0) + 110;
+  const H = headH + 48 + textH + photoHs.reduce((a, h) => a + h + 28, 0) + 36;
   cv.width = W; cv.height = H;
   ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
   // 머리띠
@@ -1619,10 +1619,6 @@ async function buildReplyCard(text, files, c){
     ctx.strokeStyle = '#D3D9E5'; ctx.lineWidth = 2; ctx.strokeRect(P, y, FW, h);
     y += h + 28;
   });
-  // 바닥글
-  ctx.fillStyle = '#EEF1F6'; ctx.fillRect(0, H - 90, W, 90);
-  ctx.fillStyle = '#556079'; ctx.font = `26px ${font}`; ctx.textBaseline = 'middle';
-  ctx.fillText('선민종합관리(주) · 사람을 먼저 생각하는 관리', P, H - 45);
   const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.88));
   const name = `회신_${(c.location || '민원').replace(/\s+/g, '')}.jpg`;
   return new File([blob], name, {type:'image/jpeg'});
