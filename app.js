@@ -1010,14 +1010,14 @@ function settingsView(){
   ${serverSection()}
   <div class="sec act">
     <h3>데이터 백업</h3>
-    <p class="hint">${SERVER ? '민원 기록은 서버에 저장됩니다. 만일에 대비해 한 달에 한 번쯤 백업 파일을 받아 두세요. 백업을 불러오면 서버 기록에 합쳐집니다(사진은 백업에 들어가지 않습니다).' : '민원 기록은 이 기기의 브라우저에 저장됩니다. 브라우저 기록을 지우면 함께 지워지니 정기적으로 백업 파일을 받아 두세요.'}</p>
+    <p class="hint">${SERVER ? '민원 기록은 서버에 저장됩니다. 만일에 대비해 한 달에 한 번쯤 엑셀 파일로 받아 두세요(민원·처리내역·직원 시트, 사진은 들어가지 않습니다).' : '민원 기록은 이 기기의 브라우저에 저장됩니다. 브라우저 기록을 지우면 함께 지워지니 정기적으로 백업해 두세요.'}</p>
     <div class="btns">
       <button type="button" class="btn primary" data-act="export-xlsx">엑셀 파일로 백업받기</button>
-      <button type="button" class="btn" data-act="export">복원용 파일 받기 (.json)</button>
+      ${!SERVER || S.hq ? `<button type="button" class="btn" data-act="export">복원용 파일 받기 (.json)</button>
       <label class="btn">복원용 파일 열어보기<input type="file" id="view-file" accept="application/json,.json" hidden></label>
-      <label class="btn">복원용 파일 불러오기<input type="file" id="import-file" accept="application/json,.json" hidden></label>
+      <label class="btn">복원용 파일 불러오기<input type="file" id="import-file" accept="application/json,.json" hidden></label>` : ''}
     </div>
-    <p class="hint"><b>엑셀 파일</b>(민원·처리내역·직원 시트)은 나중에 열어 보고 인쇄하기 좋습니다. <b>복원용 파일(.json)</b>은 서버에 다시 넣을 때 쓰는 저장용이라 그냥 열면 읽기 어렵고, 「열어보기」로 내용을 확인할 수 있습니다.</p>
+    ${!SERVER || S.hq ? '<p class="hint">복원용 파일(.json)은 서버에 다시 넣을 때 쓰는 저장용입니다. 「열어보기」로 내용을 표로 확인하고 엑셀로 바꾸거나 서버에 합칠 수 있습니다.</p>' : ''}
     ${backupPreview()}
   </div>
   <div class="btns"><button type="button" class="btn" data-act="cancel">닫기</button></div>`;
