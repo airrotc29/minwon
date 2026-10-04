@@ -89,7 +89,7 @@ end $$;
 
 -- 2) 계정 ---------------------------------------------------------------
 -- 본사 담당자(총괄) 계정. 바꾸려면 이메일을 고쳐 다시 실행하거나 앱 「본사 → 계정 관리」에서 지정하세요.
-insert into public.app_users(email, role, site_id, name) values ('airrotc29@naver.com', 'hq', null, '본사')
+insert into public.app_users(email, role, site_id, name) values ('boss-hq@sunmin.kr', 'hq', null, '본사'), ('airrotc29@naver.com', 'hq', null, '본사')
   on conflict (email) do update set role = 'hq', site_id = null;
 
 -- 예전 버전(app_managers 표)에서 올리기: 관리소장 → main 관리소장, 나머지 로그인 계정 → main 직원
