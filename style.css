@@ -506,3 +506,6 @@ body.readonly #staff-picker{display:none!important}
 
 .btn.yellow{background:#FFE15A;border-color:#E0B400;color:#141B2D;font-weight:700}
 .btn.yellow:hover{background:#FFD83A;border-color:#C79F00}
+
+mark.hl{background:#FFE15A;color:#141B2D;padding:1px 5px;border-radius:4px;-webkit-box-decoration-break:clone;box-decoration-break:clone;line-height:1.9}
+mark.hl b{color:#141B2D}
