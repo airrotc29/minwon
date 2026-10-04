@@ -522,12 +522,12 @@ function fixFilter(){
   if(S.role === 'staff'){ if(!STAFF_F.includes(S.filter)) S.filter = 'todo'; }
   else if(STAFF_F.includes(S.filter) && S.filter !== 'replied') S.filter = 'open';
 }
-/* 소장이 '지시해 주세요'·'회신해 주세요' 카드를 눌렀을 때, 아직 열어 보지 않은 민원은 누를 때까지 깜빡인다.
-   (민원 id + 상태로 기억하므로, 다음 단계로 넘어가 다시 할 일이 되면 또 깜빡인다) */
+/* 열어 본 민원 기록(예전 깜빡임 방식에서 쓰던 것, 지금은 기록만 남김) */
 const seenKey = c => `${c.id}:${c.status}`;
 let seenTap = new Set(); try{ seenTap = new Set(JSON.parse(lsGet('seenTap') || '[]')); }catch(e){}
 function markSeen(c){ if(!c) return; seenTap.add(seenKey(c)); try{ lsSet('seenTap', JSON.stringify([...seenTap].slice(-500))); }catch(e){} }
-const needsTap = c => S.role === 'manager' && (S.filter === 'received' || S.filter === 'done') && c.status === S.filter && !seenTap.has(seenKey(c));
+// 소장 화면에서는 지시·회신이 필요한 민원(접수·처리완료)이 어느 목록에 있든 처리될 때까지 계속 깜빡인다
+const needsTap = c => S.role === 'manager' && (c.status === 'received' || c.status === 'done');
 function filtered(){
   fixFilter();
   let b = base().filter(c => matchFilter(c, S.filter));
