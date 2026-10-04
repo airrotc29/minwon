@@ -1,0 +1,80 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--accent:#1E3A7B;--ink:#141B2D;--muted:#556079;--line:#D3D9E5;--bg:#EEF1F6;--y:#FFE15A;--yb:#E0B400;--red:#D01E12}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"IBM Plex Sans KR","Noto Sans KR",sans-serif;color:var(--ink)}
+.opt{width:390px;padding:16px 14px 18px;background:var(--bg)}
+.tag{display:inline-block;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border-radius:999px;padding:3px 11px;margin-bottom:6px}
+h2{margin:2px 0 12px;font-size:17px}
+.sub{font-size:12.5px;color:var(--muted);margin:-6px 0 12px}
+/* A 흐름 단계형 */
+.sum{display:flex;justify-content:space-between;align-items:baseline;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:10px}
+.sum b{font-size:22px}.sum span{font-size:13px;color:var(--muted)}
+.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;position:relative}
+.st{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 2px 8px;text-align:center;position:relative}
+.st b{display:block;font-size:22px;line-height:1.1}.st span{font-size:11.5px;color:var(--muted);display:block;margin-top:2px;letter-spacing:-.03em}
+.st.me{background:var(--y);border-color:var(--yb)}.st.me b{color:var(--red)}.st.me span{color:var(--ink);font-weight:600}
+.st.done{background:#E9EDF4}.st.done b{color:var(--muted)}
+.st:not(:last-child)::after{content:"›";position:absolute;right:-7px;top:50%;transform:translateY(-50%);font-size:16px;color:#8D97AD;z-index:2}
+.who{display:grid;grid-template-columns:1fr 3fr 1fr;gap:4px;margin-top:5px;font-size:11px;color:var(--muted);text-align:center}
+.who div{border-top:2px solid #C3CADA;padding-top:3px}.who .m{border-color:var(--yb);color:#8A6A00;font-weight:600}
+/* B 할 일 우선형 */
+.todo{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.big{background:var(--y);border:1.5px solid var(--yb);border-radius:14px;padding:12px 14px}
+.big small{font-size:12px;color:#6B5800;font-weight:600}.big b{display:block;font-size:34px;color:var(--red);line-height:1.1}.big span{font-size:14px;font-weight:700}
+.row2{display:flex;gap:8px;margin-bottom:8px}
+.mid{flex:1;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;display:flex;justify-content:space-between;align-items:center}
+.mid span{font-size:13.5px}.mid b{font-size:20px}
+.foot{display:flex;justify-content:space-between;font-size:13.5px;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px}
+.foot b{color:var(--ink)}
+.cap{font-size:11.5px;color:var(--muted);margin:2px 2px 5px;font-weight:600}
+/* C 진행 막대형 */
+.bar{display:flex;height:26px;border-radius:8px;overflow:hidden;margin:4px 0 10px;border:1px solid var(--line)}
+.bar i{display:block;height:100%}
+.leg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.lg{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;align-items:center;gap:7px}
+.lg i{width:12px;height:12px;border-radius:3px;flex:none}.lg span{font-size:12.5px;flex:1}.lg b{font-size:17px}
+.lg.me{background:var(--y);border-color:var(--yb)}.lg.me b{color:var(--red)}
+.head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}.head b{font-size:26px}.head span{font-size:13px;color:var(--muted)}
+.note{font-size:11.5px;color:var(--muted);margin-top:8px}
+</style></head><body>
+
+<section class="opt" id="a">
+  <span class="tag">대안 1</span><h2>흐름 단계형</h2><p class="sub">접수부터 회신까지 순서대로 한 줄. 소장이 할 일만 노랗게.</p>
+  <div class="sum"><span>미결 (처리 안 끝난 것)</span><b>7</b><span>전체 12</span></div>
+  <div class="flow">
+    <div class="st me"><b>1</b><span>지시 대기</span></div>
+    <div class="st"><b>2</b><span>지시됨</span></div>
+    <div class="st"><b>3</b><span>처리중</span></div>
+    <div class="st me"><b>1</b><span>회신 대기</span></div>
+    <div class="st done"><b>5</b><span>회신완료</span></div>
+  </div>
+  <div class="who"><div class="m">소장</div><div>직원 처리</div><div class="m">소장</div></div>
+</section>
+
+<section class="opt" id="b">
+  <span class="tag">대안 2</span><h2>할 일 우선형</h2><p class="sub">‘누가 무엇을 해야 하나’로 묶음. 소장이 할 일을 크게.</p>
+  <div class="cap">소장님이 할 일</div>
+  <div class="todo">
+    <div class="big"><small>새 민원</small><b>1</b><span>지시할 것</span></div>
+    <div class="big"><small>직원 완료 보고</small><b>1</b><span>회신할 것</span></div>
+  </div>
+  <div class="cap">직원이 처리 중</div>
+  <div class="row2"><div class="mid"><span>지시됨</span><b>2</b></div><div class="mid"><span>처리중</span><b>3</b></div></div>
+  <div class="foot"><span>미결 <b>7</b></span><span>회신완료 <b>5</b></span><span>전체 <b>12</b></span></div>
+</section>
+
+<section class="opt" id="c">
+  <span class="tag">대안 3</span><h2>진행 막대형</h2><p class="sub">전체 중 어디에 몰려 있는지 한 줄 막대로. 아래 칸을 누르면 목록.</p>
+  <div class="head"><span>미결 <b>7</b>건</span><span>전체 12건 · 완료 5건</span></div>
+  <div class="bar"><i style="flex:1;background:#2a78d6"></i><i style="flex:2;background:#eda100"></i><i style="flex:3;background:#d9382b"></i><i style="flex:1;background:#1baf7a"></i><i style="flex:5;background:#C3CADA"></i></div>
+  <div class="leg">
+    <div class="lg me"><i style="background:#2a78d6"></i><span>지시 대기</span><b>1</b></div>
+    <div class="lg"><i style="background:#eda100"></i><span>지시됨</span><b>2</b></div>
+    <div class="lg"><i style="background:#d9382b"></i><span>처리중</span><b>3</b></div>
+    <div class="lg me"><i style="background:#1baf7a"></i><span>회신 대기</span><b>1</b></div>
+    <div class="lg"><i style="background:#C3CADA"></i><span>회신완료</span><b>5</b></div>
+    <div class="lg"><i style="background:#fff;border:1px solid #9aa3b5"></i><span>전체</span><b>12</b></div>
+  </div>
+  <p class="note">색은 본사 그래프와 같은 단계 색</p>
+</section>
+</body></html>
