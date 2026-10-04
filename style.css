@@ -684,3 +684,6 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 .todo-card span{grid-area:l;white-space:nowrap;font-size:clamp(13px,3.6vw,15.5px);letter-spacing:-.03em}
 .todo-card b{grid-area:n;align-self:center;font-size:clamp(30px,9vw,40px);line-height:1;display:flex;align-items:baseline;gap:1px}
 .todo-card b em{font-style:normal;font-size:13px;font-weight:600;color:#556079}
+
+a.tel{color:var(--accent);font-weight:600;text-decoration:underline}
+.fld span small{font-weight:400;color:var(--muted)}

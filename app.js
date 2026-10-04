@@ -532,7 +532,7 @@ function filtered(){
   fixFilter();
   let b = base().filter(c => matchFilter(c, S.filter));
   const q = S.q.trim();
-  if(q) b = b.filter(c => [c.title, c.detail, c.location, c.category, assigneesOf(c).map(staffName).join(' ')].some(v => String(v || '').includes(q)));
+  if(q) b = b.filter(c => [c.title, c.detail, c.location, c.phone, c.category, assigneesOf(c).map(staffName).join(' ')].some(v => String(v || '').includes(q)));
   return b;
 }
 
@@ -792,6 +792,7 @@ function newForm(){
     <div class="grid2">
       <label class="fld"><span>동</span><input type="text" id="n-dong" inputmode="numeric" placeholder="101" required></label>
       <label class="fld"><span>호수</span><input type="text" id="n-ho" inputmode="numeric" placeholder="1203"></label>
+      <label class="fld"><span>민원인 전화번호 <small>(선택)</small></span><input type="tel" id="n-phone" inputmode="tel" autocomplete="off" placeholder="010-0000-0000"></label>
       <label class="fld"><span>분류</span><select id="n-cat">${opts(CATS,'시설')}</select></label>
       <label class="fld"><span>접수 경로</span><select id="n-ch">${opts(CHANNELS,'전화')}</select></label>
     </div>
@@ -970,10 +971,10 @@ function printReport(){
 function complaintsCSV(list, filename, names){
   const nameOf = id => { if(!id) return ''; const st = (names || S.db.staff).find(x => x.id === id); return st ? st.name : staffName(id); };
   const sorted = [...list].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-  const rows = [['번호', '접수일시', '동', '호', '위치', '분류', '접수경로', '긴급', '제목', '내용', '접수자', '담당', '처리기한', '상태', '완료보고일', '처리내용', '회신일', '회신방법']];
+  const rows = [['번호', '접수일시', '동', '호', '위치', '전화번호', '분류', '접수경로', '긴급', '제목', '내용', '접수자', '담당', '처리기한', '상태', '완료보고일', '처리내용', '회신일', '회신방법']];
   sorted.forEach((c, i) => {
     const done = lastEv(c, 'done'), rep = lastEv(c, 'replied');
-    rows.push([i + 1, fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
+    rows.push([i + 1, fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.phone || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
       c.title || '', c.detail || '', (c.receivedBy && c.receivedBy !== 'manager') ? nameOf(c.receivedBy) : '관리소장', assigneesOf(c).map(nameOf).join(', '), c.due || '', ST[c.status] ? ST[c.status].label : c.status,
       done ? fmt(done.at) : '', done ? done.text || '' : '', rep ? fmt(rep.at) : '', rep ? rep.method || '' : '']);
   });
@@ -997,11 +998,11 @@ function loadXLSX(){
 function complaintRows(list, names){
   const nameOf = id => { if(!id) return ''; const st = (names || S.db.staff).find(x => x.id === id); return st ? st.name : staffName(id); };
   const sorted = [...list].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-  const main = [['번호', '접수일시', '동', '호', '위치', '분류', '접수경로', '긴급', '제목', '내용', '접수자', '담당', '처리기한', '상태', '완료보고일', '처리내용', '회신일', '회신방법', '사진수']];
+  const main = [['번호', '접수일시', '동', '호', '위치', '전화번호', '분류', '접수경로', '긴급', '제목', '내용', '접수자', '담당', '처리기한', '상태', '완료보고일', '처리내용', '회신일', '회신방법', '사진수']];
   const evs = [['민원번호', '일시', '구분', '담당/작성', '내용', '처리기한', '알린방법', '사진수']];
   sorted.forEach((c, i) => {
     const done = lastEv(c, 'done'), rep = lastEv(c, 'replied');
-    main.push([i + 1, fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
+    main.push([i + 1, fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.phone || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
       c.title || '', c.detail || '', (c.receivedBy && c.receivedBy !== 'manager') ? nameOf(c.receivedBy) : '관리소장', assigneesOf(c).map(nameOf).join(', '), c.due || '', ST[c.status] ? ST[c.status].label : c.status,
       done ? fmt(done.at) : '', done ? done.text || '' : '', rep ? fmt(rep.at) : '', rep ? rep.method || '' : '', photoCount(c)]);
     (c.events || []).forEach(e => evs.push([i + 1, fmt(e.at), LOG_LABEL[e.type] || e.type, (e.staffIds && e.staffIds.length) ? e.staffIds.map(nameOf).join(', ') : e.staffId ? nameOf(e.staffId) : '관리소장', e.text || '', e.due || '', e.method || '', (e.photos || []).length]));
@@ -1016,7 +1017,7 @@ async function exportXLSX(list, names, settings, filename){
     const X = await loadXLSX();
     const wb = X.utils.book_new();
     const add = (rows, name, widths) => { const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = widths.map(w => ({wch:w})); X.utils.book_append_sheet(wb, ws, name); };
-    add(main, '민원', [5, 16, 6, 6, 14, 10, 8, 5, 24, 30, 10, 10, 11, 8, 16, 30, 16, 8, 6]);
+    add(main, '민원', [5, 16, 6, 6, 14, 14, 10, 8, 5, 24, 30, 10, 10, 11, 8, 16, 30, 16, 8, 6]);
     add(evs, '처리내역', [8, 16, 10, 10, 40, 11, 10, 6]);
     add(staffRows, '직원', [12, 16]);
     add([['항목', '값'], ['사업장', (settings && settings.buildingName) || siteName()], ['회사', (settings && settings.company) || COMPANY], ['백업 일시', fmt(now())], ['민원 수', list.length]], '정보', [12, 40]);
@@ -1487,6 +1488,7 @@ function complaintView(){
   </div>
   <dl class="meta">
     <div><dt>동·호수</dt><dd>${esc(c.location)}</dd></div>
+    ${c.phone ? `<div><dt>민원인 전화</dt><dd><a class="tel" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a></dd></div>` : ''}
     <div><dt>접수자</dt><dd>${esc(receiver(c) || '관리소장')}</dd></div>
     <div><dt>분류 · 경로</dt><dd>${esc(c.category)} · ${esc(c.channel)}</dd></div>
   </dl>
@@ -1979,7 +1981,8 @@ document.addEventListener('submit', e => {
     const location = /^\d+$/.test(dong) ? `${dong}동${ho ? ' ' + ho + (/^\d+$/.test(ho) ? '호' : '') : ''}` : [dong, ho].filter(Boolean).join(' ');
     const byStaff = S.role === 'staff' && S.me;
     const self = byStaff && document.getElementById('n-self').checked;
-    const data = { title:val('n-title'), detail:val('n-detail'), location, dong, ho,
+    const phone = val('n-phone').replace(/[^\d+\-\s]/g, '').trim();
+    const data = { title:val('n-title'), detail:val('n-detail'), location, dong, ho, phone,
       category:val('n-cat'), channel:ch, urgent:document.getElementById('n-urgent').checked, status:'received',
       receivedBy: byStaff ? S.me : 'manager',
       assignee:null, assignees:[], instruction:'', due:'', rework:false, createdAt:at, updatedAt:at,
