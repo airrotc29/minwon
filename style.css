@@ -542,7 +542,6 @@ mark.hl b{color:#141B2D}
 /* 새 민원 소리 알림 */
 .bell{border:1px solid #E0B400;background:#FFE15A;color:#141B2D;font:inherit;font-weight:600;font-size:13px;border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap}
 .bell.off{background:var(--sunk);border-color:var(--line);color:var(--muted);font-weight:500}
-.bell.locked{animation:spark-glow 1.6s ease-in-out infinite}
 .newcall{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;background:#D01E12;color:#fff;border-radius:12px;padding:10px 12px;box-shadow:0 6px 18px rgba(208,30,18,.4);animation:call-pulse 1.2s ease-in-out infinite}
 .newcall[hidden]{display:none}
 .nc-ico{font-size:22px;animation:call-ring .9s ease-in-out infinite;transform-origin:50% 0}
@@ -552,3 +551,17 @@ mark.hl b{color:#141B2D}
 @keyframes call-pulse{0%,100%{box-shadow:0 6px 18px rgba(208,30,18,.35)}50%{box-shadow:0 6px 26px rgba(208,30,18,.75)}}
 @keyframes call-ring{0%,100%{transform:rotate(0)}20%{transform:rotate(18deg)}40%{transform:rotate(-16deg)}60%{transform:rotate(10deg)}80%{transform:rotate(-8deg)}}
 body.sheet .newcall{position:fixed;left:12px;right:12px;top:12px;z-index:70}
+
+/* 담당 직원 여러 명 선택 */
+fieldset.fld.multi{border:0;margin:0;padding:0;min-width:0}
+fieldset.fld.multi legend{font-size:13px;color:var(--muted);padding:0;margin-bottom:6px}
+fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
+.chk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.chk{position:relative;display:block;cursor:pointer}
+.chk input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer;z-index:2}
+.chk span{display:flex;flex-direction:column;gap:1px;padding:10px 12px 10px 38px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);font-weight:600;font-size:14.5px;position:relative;min-height:46px;justify-content:center}
+.chk span::before{content:"";position:absolute;left:11px;top:50%;width:18px;height:18px;margin-top:-9px;border:2px solid var(--muted);border-radius:5px;background:var(--surface)}
+.chk span small{font-weight:400;font-size:12px;color:var(--muted)}
+.chk input:checked + span{background:#FFF3B0;border-color:#E0B400}
+.chk input:checked + span::before{background:var(--accent);border-color:var(--accent);content:"✓";color:#fff;font-size:13px;line-height:14px;text-align:center}
+.chk input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}

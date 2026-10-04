@@ -248,11 +248,11 @@ function checkNew(){
   if(fresh.length) notifyNew(fresh);
 }
 function renderBell(){
-  const b = $('#bell'); if(!b) return;
+  const b = $('#bell'); if(!b) return;     // 알림 버튼은 없앰(소장·직원은 항상 켜짐, 본사·임원은 꺼짐)
   b.hidden = !(SERVER && S.user);
   const on = alertOn();
-  b.textContent = !on ? '🔕 알림 꺼짐' : audioReady ? '🔔 알림 켜짐' : '🔔 눌러서 소리 켜기';
-  b.classList.toggle('off', !on); b.classList.toggle('locked', on && !audioReady);
+  b.textContent = on ? '🔔 알림 켜짐' : '🔕 알림 꺼짐';
+  b.classList.toggle('off', !on);
   b.setAttribute('aria-pressed', on);
 }
 let channel = null;
@@ -481,6 +481,16 @@ const store = {
 
 const find = id => S.complaints.find(c => c.id === id);
 const staffName = id => { const s = S.db.staff.find(x => x.id === id); return s ? s.name : (id ? '(명단에서 삭제된 직원)' : '미배정'); };
+/* 담당 직원: 여러 명 가능(assignees). 예전 기록은 assignee 한 명만 있으므로 함께 처리한다 */
+const assigneesOf = c => (c.assignees && c.assignees.length) ? c.assignees : (c.assignee ? [c.assignee] : []);
+const namesOf = c => { const a = assigneesOf(c); return a.length ? a.map(staffName).join(', ') : '미배정'; };
+const evNames = e => (e.staffIds && e.staffIds.length ? e.staffIds : [e.staffId]).map(staffName).join(', ');
+/* 마지막 (재)지시 이후 완료 보고를 올린 직원들. 모든 담당자가 보고해야 '처리완료(회신 대기)'가 된다 */
+function doneBy(c){
+  const evs = c.events || []; let from = -1;
+  evs.forEach((e, k) => { if(e.type === 'assigned' || e.type === 'rework' || (e.type === 'reassigned' && e.restart)) from = k; });
+  return new Set(evs.slice(from + 1).filter(e => e.type === 'done').map(e => e.staffId));
+}
 const lastEv = (c, type) => (c.events || []).filter(e => e.type === type).slice(-1)[0];
 const isOverdue = c => c.due && (c.status === 'assigned' || c.status === 'progress') && c.due < ymd(new Date());
 function numbers(){
@@ -491,15 +501,16 @@ function numbers(){
 
 /* ---------- 보기 ---------- */
 function base(){
-  if(S.role === 'staff') return S.me ? S.complaints.filter(c => c.assignee === S.me || c.receivedBy === S.me) : [];
+  if(S.role === 'staff') return S.me ? S.complaints.filter(c => assigneesOf(c).includes(S.me) || c.receivedBy === S.me) : [];
   return S.complaints;
 }
 function filtered(){
   let b = base();
-  if(S.filter === 'open') b = b.filter(c => c.status !== 'replied');
+  if(S.role === 'staff' && S.filter === 'received') S.filter = 'open';       // 직원은 '지시 대기'를 쓰지 않는다(내가 접수한 건은 소장 지시를 기다릴 뿐)
+  if(S.filter === 'open') b = b.filter(c => c.status !== 'replied' && !(S.role === 'staff' && c.status === 'received'));
   else if(S.filter !== 'all') b = b.filter(c => c.status === S.filter);
   const q = S.q.trim();
-  if(q) b = b.filter(c => [c.title, c.detail, c.location, c.category, staffName(c.assignee)].some(v => String(v || '').includes(q)));
+  if(q) b = b.filter(c => [c.title, c.detail, c.location, c.category, assigneesOf(c).map(staffName).join(' ')].some(v => String(v || '').includes(q)));
   return b;
 }
 
@@ -656,8 +667,9 @@ function render(){
 
 function renderSummary(){
   const b = base();
-  const cnt = k => k === 'all' ? b.length : k === 'open' ? b.filter(c => c.status !== 'replied').length : b.filter(c => c.status === k).length;
-  const keys = ['open', ...ORDER, 'all'];
+  const staffView = S.role === 'staff';
+  const cnt = k => k === 'all' ? b.length : k === 'open' ? b.filter(c => c.status !== 'replied' && !(staffView && c.status === 'received')).length : b.filter(c => c.status === k).length;
+  const keys = ['open', ...ORDER.filter(k => !(staffView && k === 'received')), 'all'];
   const searchVal = $('#q') ? $('#q').value : S.q;
   const hadFocus = document.activeElement && document.activeElement.id === 'q';
   $('#summary').innerHTML = '<div class="chips" role="group" aria-label="상태별 보기">' + keys.map(k => {
@@ -696,7 +708,7 @@ function renderList(){
       <span class="t">${esc(c.title)}</span>
       <span class="l3"><span class="pill s-${c.status}">${ST[c.status].label}</span>
         ${c.urgent ? '<span class="tag">긴급</span>' : ''}${c.rework && c.status !== 'replied' && c.status !== 'done' ? '<span class="tag">재작업</span>' : ''}${isOverdue(c) ? '<span class="tag">기한 초과</span>' : ''}
-        <span>${esc(c.assignee ? staffName(c.assignee) : '미배정')}</span><span>·</span><span>${fmt(c.createdAt)}</span>${photoCount(c) ? `<span>· 사진 ${photoCount(c)}</span>` : ''}</span>
+        <span>${esc(namesOf(c))}</span><span>·</span><span>${fmt(c.createdAt)}</span>${photoCount(c) ? `<span>· 사진 ${photoCount(c)}</span>` : ''}</span>
     </button>`).join('');
 }
 
@@ -801,7 +813,7 @@ function reportData(ym, src){
     dueTotal:withDue.length, onTime, dueRate:pct(onTime, withDue.length),
     byCat:group(recv, c => c.category || '기타'),
     byDong:group(recv, dongKey).slice(0, 10),
-    byStaff:group(recv.filter(c => c.assignee), c => staffName(c.assignee)).map(g => Object.assign(g, {avg:avg(g.list.filter(c => closedBy(c, e)))}))
+    byStaff:group(recv.filter(c => assigneesOf(c).length).flatMap(c => assigneesOf(c).map(id => Object.assign({}, c, {__st:id}))), c => staffName(c.__st)).map(g => Object.assign(g, {avg:avg(g.list.filter(c => closedBy(c, e)))}))
   };
 }
 function reportMeta(ym){
@@ -865,11 +877,11 @@ function reportHTML(ym, meta){
 
     <h2>5. 이달 접수 민원 목록 (${d.recv.length}건)</h2>
     ${table(['번호', '접수일', '동·호수', '분류', '민원 내용', '처리 내용', '담당', '상태'],
-      d.recv.map(c => `<tr><td class="n">${nums[c.id]}</td><td>${fmtDate(ymd(new Date(c.createdAt)))}</td><td>${esc(c.location)}</td><td>${esc(c.category)}</td><td>${c.urgent ? '<b class="r-urg">[긴급]</b> ' : ''}${esc(c.title)}</td><td>${esc(doneText(c))}</td><td>${esc(c.assignee ? staffName(c.assignee) : '-')}</td><td>${esc(stLabel(c))}</td></tr>`),
+      d.recv.map(c => `<tr><td class="n">${nums[c.id]}</td><td>${fmtDate(ymd(new Date(c.createdAt)))}</td><td>${esc(c.location)}</td><td>${esc(c.category)}</td><td>${c.urgent ? '<b class="r-urg">[긴급]</b> ' : ''}${esc(c.title)}</td><td>${esc(doneText(c))}</td><td>${esc(assigneesOf(c).length ? namesOf(c) : '-')}</td><td>${esc(stLabel(c))}</td></tr>`),
       '이달 접수된 민원이 없습니다.')}
 
     ${d.carried.length ? `<h2>6. 전월 이월 미결 (${d.carried.length}건)</h2>
-    ${table(['번호', '접수일', '동·호수', '민원 내용', '담당', '현재 상태'], d.carried.map(c => `<tr><td class="n">${nums[c.id]}</td><td>${fmtDate(ymd(new Date(c.createdAt)))}</td><td>${esc(c.location)}</td><td>${esc(c.title)}</td><td>${esc(c.assignee ? staffName(c.assignee) : '-')}</td><td>${esc(stLabel(c))}</td></tr>`), '-')}` : ''}
+    ${table(['번호', '접수일', '동·호수', '민원 내용', '담당', '현재 상태'], d.carried.map(c => `<tr><td class="n">${nums[c.id]}</td><td>${fmtDate(ymd(new Date(c.createdAt)))}</td><td>${esc(c.location)}</td><td>${esc(c.title)}</td><td>${esc(assigneesOf(c).length ? namesOf(c) : '-')}</td><td>${esc(stLabel(c))}</td></tr>`), '-')}` : ''}
 
     <h2>${d.carried.length ? 7 : 6}. 특이사항 및 관리소장 의견</h2>
     <div class="r-text" id="rv-note">${esc(meta.note) || '<span class="rempty">없음</span>'}</div>
@@ -931,7 +943,7 @@ function complaintsCSV(list, filename, names){
   sorted.forEach((c, i) => {
     const done = lastEv(c, 'done'), rep = lastEv(c, 'replied');
     rows.push([i + 1, fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
-      c.title || '', c.detail || '', (c.receivedBy && c.receivedBy !== 'manager') ? nameOf(c.receivedBy) : '관리소장', nameOf(c.assignee), c.due || '', ST[c.status] ? ST[c.status].label : c.status,
+      c.title || '', c.detail || '', (c.receivedBy && c.receivedBy !== 'manager') ? nameOf(c.receivedBy) : '관리소장', assigneesOf(c).map(nameOf).join(', '), c.due || '', ST[c.status] ? ST[c.status].label : c.status,
       done ? fmt(done.at) : '', done ? done.text || '' : '', rep ? fmt(rep.at) : '', rep ? rep.method || '' : '']);
   });
   const csv = '﻿' + rows.map(r => r.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -959,9 +971,9 @@ function complaintRows(list, names){
   sorted.forEach((c, i) => {
     const done = lastEv(c, 'done'), rep = lastEv(c, 'replied');
     main.push([i + 1, fmt(c.createdAt), c.dong || '', c.ho || '', c.location || '', c.category || '', c.channel || '', c.urgent ? '긴급' : '',
-      c.title || '', c.detail || '', (c.receivedBy && c.receivedBy !== 'manager') ? nameOf(c.receivedBy) : '관리소장', nameOf(c.assignee), c.due || '', ST[c.status] ? ST[c.status].label : c.status,
+      c.title || '', c.detail || '', (c.receivedBy && c.receivedBy !== 'manager') ? nameOf(c.receivedBy) : '관리소장', assigneesOf(c).map(nameOf).join(', '), c.due || '', ST[c.status] ? ST[c.status].label : c.status,
       done ? fmt(done.at) : '', done ? done.text || '' : '', rep ? fmt(rep.at) : '', rep ? rep.method || '' : '', photoCount(c)]);
-    (c.events || []).forEach(e => evs.push([i + 1, fmt(e.at), LOG_LABEL[e.type] || e.type, e.staffId ? nameOf(e.staffId) : '관리소장', e.text || '', e.due || '', e.method || '', (e.photos || []).length]));
+    (c.events || []).forEach(e => evs.push([i + 1, fmt(e.at), LOG_LABEL[e.type] || e.type, (e.staffIds && e.staffIds.length) ? e.staffIds.map(nameOf).join(', ') : e.staffId ? nameOf(e.staffId) : '관리소장', e.text || '', e.due || '', e.method || '', (e.photos || []).length]));
   });
   return {main, evs};
 }
@@ -1280,12 +1292,12 @@ function openKpiPopup(k){
   }else{
     // 사업장 이름순으로 묶고, 같은 사업장 안에서는 최근 접수순
     const list = hqKpiList(k).sort((a, b) => siteName(siteOf(a)).localeCompare(siteName(siteOf(b)), 'ko') || (b.createdAt || '').localeCompare(a.createdAt || ''));
-    const rows = list.map(c => { const st = ST[c.status]; return `<tr class="click" data-act="hq-enter" data-site="${esc(siteOf(c))}" data-id="${esc(c.id)}"><td>${esc(siteName(siteOf(c)))}</td><td>${esc(c.location || [c.dong, c.ho].filter(Boolean).join(' '))}</td><td class="t">${c.urgent ? '<span class="tag">긴급</span> ' : ''}${esc(c.title || '')}</td><td>${esc(c.category || '')}</td><td><span class="pill" style="--c:var(--st-${esc(c.status)})">${esc(st ? st.chip : c.status)}</span></td><td>${esc(c.assignee ? staffName(c.assignee) : '미배정')}</td><td class="nowrap">${k === 'overdue' ? esc(c.due || '') : fmt(c.createdAt).slice(0, 9)}</td></tr>`; }).join('');
+    const rows = list.map(c => { const st = ST[c.status]; return `<tr class="click" data-act="hq-enter" data-site="${esc(siteOf(c))}" data-id="${esc(c.id)}"><td>${esc(siteName(siteOf(c)))}</td><td>${esc(c.location || [c.dong, c.ho].filter(Boolean).join(' '))}</td><td class="t">${c.urgent ? '<span class="tag">긴급</span> ' : ''}${esc(c.title || '')}</td><td>${esc(c.category || '')}</td><td><span class="pill" style="--c:var(--st-${esc(c.status)})">${esc(st ? st.chip : c.status)}</span></td><td>${esc(namesOf(c))}</td><td class="nowrap">${k === 'overdue' ? esc(c.due || '') : fmt(c.createdAt).slice(0, 9)}</td></tr>`; }).join('');
     // 휴대폰에서는 표 대신 카드 목록(CSS로 화면 폭에 따라 하나만 보임)
     const cards = list.map(c => { const st = ST[c.status]; return `<li class="pc" data-act="hq-enter" data-site="${esc(siteOf(c))}" data-id="${esc(c.id)}" tabindex="0">
       <div class="pc-l1"><span class="pc-site">${esc(siteName(siteOf(c)))}</span><span class="pill" style="--c:var(--st-${esc(c.status)})">${esc(st ? st.chip : c.status)}</span></div>
       <div class="pc-t">${c.urgent ? '<span class="tag">긴급</span> ' : ''}${esc(c.title || '')}</div>
-      <div class="pc-l3">${esc(c.location || [c.dong, c.ho].filter(Boolean).join(' '))} · ${esc(c.category || '')} · ${esc(c.assignee ? staffName(c.assignee) : '미배정')} · ${k === 'overdue' ? '기한 ' + esc(c.due || '') : fmt(c.createdAt).slice(0, 9)}</div></li>`; }).join('');
+      <div class="pc-l3">${esc(c.location || [c.dong, c.ho].filter(Boolean).join(' '))} · ${esc(c.category || '')} · ${esc(namesOf(c))} · ${k === 'overdue' ? '기한 ' + esc(c.due || '') : fmt(c.createdAt).slice(0, 9)}</div></li>`; }).join('');
     body = rows ? `<table class="rtable"><thead><tr><th>사업장</th><th>동·호</th><th>제목</th><th>분류</th><th>상태</th><th>담당</th><th>${k === 'overdue' ? '처리 기한' : '접수일'}</th></tr></thead><tbody>${rows}</tbody></table><ul class="popup-list">${cards}</ul>` : '<p class="hint">해당하는 민원이 없습니다.</p>';
   }
   $('#popup-title').textContent = `${d.title} · ${k === 'sites' ? S.db.sites.filter(x => !x.archived).length + '곳' : hqKpiList(k).length + '건'}`;
@@ -1363,7 +1375,7 @@ function backupPreview(){
     <div class="conn"><span><b>${esc(b.name)}</b></span><span class="hint">민원 ${list.length}건 · 직원 ${names.length}명${dates.length ? ` · ${fmtDate(ymd(new Date(dates[0])))} ~ ${fmtDate(ymd(new Date(dates[dates.length - 1])))}` : ''}${b.data.settings && b.data.settings.buildingName ? ' · ' + esc(b.data.settings.buildingName) : ''}</span></div>
     <div class="btns"><button type="button" class="btn" data-act="backup-csv">이 파일을 엑셀로 변환</button><button type="button" class="btn" data-act="backup-import">이 파일을 서버에 합치기</button><span class="spacer"></span><button type="button" class="btn sm" data-act="backup-close">닫기</button></div>
     ${list.length ? `<div class="tscroll"><table class="rtable"><thead><tr><th>접수일</th><th>동·호수</th><th>분류</th><th>민원 내용</th><th>담당</th><th>상태</th><th>처리 내용</th></tr></thead><tbody>
-      ${list.map(c => { const d = lastEv(c, 'done'); return `<tr><td>${fmt(c.createdAt)}</td><td>${esc(c.location || '')}</td><td>${esc(c.category || '')}</td><td>${c.urgent ? '<b class="r-urg">[긴급]</b> ' : ''}${esc(c.title || '')}</td><td>${esc(nameOf(c.assignee))}</td><td>${esc(ST[c.status] ? ST[c.status].label : c.status || '')}</td><td>${esc(d ? d.text || '' : '')}</td></tr>`; }).join('')}
+      ${list.map(c => { const d = lastEv(c, 'done'); return `<tr><td>${fmt(c.createdAt)}</td><td>${esc(c.location || '')}</td><td>${esc(c.category || '')}</td><td>${c.urgent ? '<b class="r-urg">[긴급]</b> ' : ''}${esc(c.title || '')}</td><td>${esc(assigneesOf(c).map(nameOf).join(', '))}</td><td>${esc(ST[c.status] ? ST[c.status].label : c.status || '')}</td><td>${esc(d ? d.text || '' : '')}</td></tr>`; }).join('')}
     </tbody></table></div>` : '<p class="hint">민원이 없는 파일입니다.</p>'}
   </div>`;
 }
@@ -1417,9 +1429,9 @@ function serverSection(){
 
 const EV = {
   received:{c:'--st-received', t:e => e.staffId ? `민원 접수 (${staffName(e.staffId)})` : '민원 접수'},
-  assigned:{c:'--st-assigned', t:e => e.self ? `${staffName(e.staffId)} 직접 처리 시작` : `${staffName(e.staffId)}에게 지시`},
-  reassigned:{c:'--st-assigned', t:e => `${staffName(e.staffId)}에게 재지시`},
-  rework:{c:'--urgent', t:e => `재작업 지시 → ${staffName(e.staffId)}`},
+  assigned:{c:'--st-assigned', t:e => e.self ? `${staffName(e.staffId)} 직접 처리 시작` : `${evNames(e)}에게 지시`},
+  reassigned:{c:'--st-assigned', t:e => `${evNames(e)}에게 재지시`},
+  rework:{c:'--urgent', t:e => `재작업 지시 → ${evNames(e)}`},
   progress:{c:'--st-progress', t:e => `${staffName(e.staffId)} 진행 보고`},
   done:{c:'--st-done', t:e => `${staffName(e.staffId)} 완료 보고`},
   notice:{c:'--accent', t:e => `민원인 중간 안내 (${e.method || ''})`},
@@ -1434,8 +1446,8 @@ function complaintView(){
       : '왼쪽 목록에서 지시를 고르면 지시 내용을 보고 진행·완료 보고를 올릴 수 있습니다.'}</div>`;
   }
   const no = numbers()[c.id];
-  const mine = S.role === 'staff' && c.assignee === S.me;
-  const order = (c.instruction && c.status !== 'received') ? `<div class="order${c.rework ? ' rework' : ''}"><span class="k">${c.rework ? '재작업 지시' : '지시 사항'} · ${esc(staffName(c.assignee))}${c.due ? ' · 기한 ' + fmtDate(c.due) : ''}</span><p>${esc(c.instruction)}</p></div>` : '';
+  const mine = S.role === 'staff' && assigneesOf(c).includes(S.me);
+  const order = (c.instruction && c.status !== 'received') ? `<div class="order${c.rework ? ' rework' : ''}"><span class="k">${c.rework ? '재작업 지시' : '지시 사항'} · ${esc(namesOf(c))}${assigneesOf(c).length > 1 && (c.status === 'assigned' || c.status === 'progress') ? ` · 완료 보고 ${doneBy(c).size}/${assigneesOf(c).length}` : ''}${c.due ? ' · 기한 ' + fmtDate(c.due) : ''}</span><p>${esc(c.instruction)}</p></div>` : '';
   return `
   <div class="d-head">
     <span class="no">#${no} · 접수 ${fmt(c.createdAt)}</span>
@@ -1462,7 +1474,9 @@ function managerActions(c){
   const assignForm = (title, defaultDue) => `<form id="f-assign" class="sec">
       ${title ? `<h3>${title}</h3>` : ''}${noStaff}
       <div class="grid2">
-        <label class="fld"><span>담당 직원</span><select id="as-staff" required>${staffOpts(c.assignee)}</select></label>
+        <fieldset class="fld multi"><legend>담당 직원 <small>(여러 명 선택 가능)</small></legend>
+          <div class="chk-grid">${S.staff.map(st => `<label class="chk"><input type="checkbox" name="as-staff" id="as-s-${esc(st.id)}" value="${esc(st.id)}"${assigneesOf(c).includes(st.id) ? ' checked' : ''}><span>${esc(st.name)}${st.duty ? `<small>${esc(st.duty)}</small>` : ''}</span></label>`).join('')}</div>
+        </fieldset>
         <label class="fld"><span>처리 기한</span><input type="date" id="as-due" value="${esc(c.due || defaultDue || '')}"></label>
       </div>
       <label class="fld"><span>지시 사항</span><textarea id="as-text" required placeholder="예) 오늘 오후 세대 방문해 누수 위치 확인, 윗집 1303호 협조 요청 후 결과 보고">${esc(S.settings.defaultOrder || '')}</textarea></label>
@@ -1496,7 +1510,7 @@ function managerActions(c){
   if(c.status === 'done'){
     html += `<details class="more" id="dt-rework"><summary>보고가 부족하면: 재작업 지시</summary>
       <form id="f-redo" class="sec">
-        <label class="fld"><span>${esc(staffName(c.assignee))}에게 다시 지시할 내용</span><textarea id="rw-text" required placeholder="예) 천장 얼룩 부분 사진 첨부 후 재보고 바랍니다"></textarea></label>
+        <label class="fld"><span>${esc(namesOf(c))}에게 다시 지시할 내용</span><textarea id="rw-text" required placeholder="예) 천장 얼룩 부분 사진 첨부 후 재보고 바랍니다"></textarea></label>
         <label class="fld" style="max-width:220px"><span>새 처리 기한</span><input type="date" id="rw-due" value="${esc(c.due || '')}"></label>
         <div class="btns"><button type="submit" class="btn danger">재작업 지시</button></div>
       </form></details>`;
@@ -1511,14 +1525,16 @@ function staffActions(c, mine){
     if(c.receivedBy === S.me){
       const msg = c.status === 'received' ? '내가 접수한 민원입니다. 소장님 지시를 기다리고 있습니다.'
         : c.status === 'replied' ? '내가 접수한 민원입니다. 회신까지 끝났습니다.'
-        : `내가 접수한 민원입니다. ${esc(staffName(c.assignee))} 담당으로 처리 중입니다.`;
+        : `내가 접수한 민원입니다. ${esc(namesOf(c))} 담당으로 처리 중입니다.`;
       return `<div class="act"><p class="hint">${msg}</p></div>`;
     }
     return '<p class="hint">내게 지시된 민원이 아닙니다.</p>';
   }
   if(c.status === 'done') return '<div class="act"><p class="hint">완료 보고를 올렸습니다. 소장이 확인 후 민원인에게 회신합니다.</p></div>';
   if(c.status === 'replied') return '<div class="act"><p class="hint">민원인 회신까지 끝난 민원입니다.</p></div>';
-  return `<div class="act"><form id="f-report" class="sec">
+  const dn = doneBy(c), others = assigneesOf(c).filter(id => id !== S.me && !dn.has(id));
+  const note = dn.has(S.me) ? `<p class="hint"><b>내 완료 보고는 올렸습니다.</b>${others.length ? ` 아직 보고하지 않은 담당자: ${esc(others.map(staffName).join(', '))}. 모두 완료하면 소장에게 회신 대기로 알려집니다.` : ''}</p>` : (assigneesOf(c).length > 1 ? `<p class="hint">함께 담당: ${esc(assigneesOf(c).filter(id => id !== S.me).map(staffName).join(', '))}. 모든 담당자가 완료 보고를 올리면 회신 대기가 됩니다.</p>` : '');
+  return `<div class="act">${note}<form id="f-report" class="sec">
     <h3>처리 결과 보고</h3>
     <label class="fld"><span>보고 내용</span><textarea id="rp-report" required placeholder="예) 1303호 욕실 배관 누수 확인. 배관 교체 완료, 1203호 천장 건조 후 도배는 세대에서 진행하기로 함"></textarea></label>
     ${photoPicker('처리 전·후 사진')}
@@ -1530,6 +1546,12 @@ function staffActions(c, mine){
 /* 민원인 안내 문구 자동 생성 */
 /* 회신에 함께 보낼 사진: 완료 회신이면 마지막 완료 보고, 중간 안내면 마지막 진행 보고의 사진 */
 function shareRefs(c){
+  if(c.status === 'done'){
+    const evs = c.events || []; let from = -1;
+    evs.forEach((e, k) => { if(e.type === 'assigned' || e.type === 'rework' || (e.type === 'reassigned' && e.restart)) from = k; });
+    const all = evs.slice(from + 1).filter(e => e.type === 'done').flatMap(e => e.photos || []);
+    if(all.length) return all;
+  }
   const ev = lastEv(c, c.status === 'done' ? 'done' : 'progress');
   return (ev && ev.photos) || [];
 }
@@ -1643,15 +1665,6 @@ document.addEventListener('click', e => {
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
   else if(a === 'hq'){ if(!S.allSites) return; goHq(); }
-  else if(a === 'bell'){
-    const turnOn = !alertOn(); lsSet('alertSound', turnOn ? '1' : '0');
-    if(turnOn){
-      unlockAudio(); chime();
-      try{ if('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); }catch(e){}
-      toast('새 민원이 접수되면 소리와 진동으로 알려 드립니다. 이 앱을 열어 둔 동안 동작합니다.');
-    }else toast('소리 알림을 껐습니다.');
-    renderBell();
-  }
   else if(a === 'call-open'){
     const id = b.dataset.id, c = S.db.complaints.find(x => x.id === id);
     callQueue = []; renderCall();
@@ -1859,10 +1872,10 @@ document.addEventListener('submit', e => {
     const data = { title:val('n-title'), detail:val('n-detail'), location, dong, ho,
       category:val('n-cat'), channel:ch, urgent:document.getElementById('n-urgent').checked, status:'received',
       receivedBy: byStaff ? S.me : 'manager',
-      assignee:null, instruction:'', due:'', rework:false, createdAt:at, updatedAt:at,
+      assignee:null, assignees:[], instruction:'', due:'', rework:false, createdAt:at, updatedAt:at,
       events:[event('received', Object.assign({at, text:`${ch}(으)로 접수`}, byStaff ? {staffId:S.me} : {}))] };
     if(self){
-      Object.assign(data, {status:'assigned', assignee:S.me, instruction:'직접 접수 후 처리'});
+      Object.assign(data, {status:'assigned', assignee:S.me, assignees:[S.me], instruction:'직접 접수 후 처리'});
       data.events.push(event('assigned', {staffId:S.me, self:true, text:'직접 접수해 처리 시작'}));
     }
     const msg = !byStaff ? '민원을 접수했습니다. 담당 직원에게 지시하세요.'
@@ -1875,17 +1888,19 @@ document.addEventListener('submit', e => {
     }, msg);
   }
   else if(f.id === 'f-assign' && c){
-    const sid = val('as-staff'); if(!sid){ toast('담당 직원을 선택하세요'); return; }
+    const sids = [...f.querySelectorAll('input[name=as-staff]:checked')].map(i => i.value);
+    if(!sids.length){ toast('담당 직원을 한 명 이상 선택하세요'); return; }
     const text = val('as-text'), due = val('as-due');
-    const type = c.assignee ? 'reassigned' : 'assigned';
-    const keep = c.status === 'progress' && c.assignee === sid;
-    run(f, () => store.update(c.id, { assignee:sid, instruction:text, due, status: keep ? 'progress' : 'assigned', rework:false },
-      event(type, {staffId:sid, text, due}), `지시: ${c.location} → ${staffName(sid)}`), `${staffName(sid)}에게 지시했습니다`);
+    const prev = assigneesOf(c), type = prev.length ? 'reassigned' : 'assigned';
+    const keep = c.status === 'progress' && sids.some(id => prev.includes(id));
+    const names = sids.map(staffName).join(', ');
+    run(f, () => store.update(c.id, { assignee:sids[0], assignees:sids, instruction:text, due, status: keep ? 'progress' : 'assigned', rework:false },
+      event(type, {staffId:sids[0], staffIds:sids, text, due, restart:!keep}), `지시: ${c.location} → ${names}`), `${names}에게 지시했습니다`);
   }
   else if(f.id === 'f-redo' && c){
     const text = val('rw-text'), due = val('rw-due') || c.due;
     run(f, () => store.update(c.id, { instruction:text, due, status:'assigned', rework:true },
-      event('rework', {staffId:c.assignee, text, due}), `재작업 지시: ${c.location}`), '재작업을 지시했습니다');
+      event('rework', {staffId:assigneesOf(c)[0], staffIds:assigneesOf(c), text, due}), `재작업 지시: ${c.location}`), '재작업을 지시했습니다');
   }
   else if(f.id === 'f-reply' && c){
     const final = f.dataset.final === 'true', text = val('rp-text'), method = val('rp-method');
@@ -1895,8 +1910,14 @@ document.addEventListener('submit', e => {
   else if(f.id === 'f-report' && c){
     const kind = (e.submitter && e.submitter.value) || 'progress', text = val('rp-report');
     const patch = { status:kind };
-    if(kind === 'done') patch.rework = false;
-    run(f, async () => store.update(c.id, patch, event(kind, Object.assign({staffId:S.me, text}, await uploadPending(c.id).then(p => p.length ? {photos:p} : {}))), `${kind === 'done' ? '완료 보고' : '진행 보고'}: ${c.location} (${staffName(S.me)})`), kind === 'done' ? '완료 보고를 올렸습니다' : '진행 보고를 올렸습니다');
+    let waiting = [];
+    if(kind === 'done'){
+      patch.rework = false;
+      const had = doneBy(c); had.add(S.me);
+      waiting = assigneesOf(c).filter(id => !had.has(id));
+      if(waiting.length) patch.status = 'progress';           // 다른 담당자의 완료 보고가 남아 있으면 아직 처리중
+    }
+    run(f, async () => store.update(c.id, patch, event(kind, Object.assign({staffId:S.me, text}, await uploadPending(c.id).then(p => p.length ? {photos:p} : {}))), `${kind === 'done' ? '완료 보고' : '진행 보고'}: ${c.location} (${staffName(S.me)})`), kind === 'done' ? (waiting.length ? `완료 보고를 올렸습니다. ${waiting.map(staffName).join(', ')}님의 보고를 기다립니다` : '완료 보고를 올렸습니다') : '진행 보고를 올렸습니다');
   }
   else if(f.id === 'f-login'){
     const btn = f.querySelector('button'); btn.disabled = true;
