@@ -1218,7 +1218,8 @@ function printHqReport(){
 
 function settingsView(){
   const s = S.settings;
-  return `<div class="d-head"><span class="no">설정</span><h2>직원·설정</h2></div>
+  return `<div class="d-head dup"><span class="no">설정</span><h2>직원·설정</h2></div>
+  <div class="scards">
   <form id="f-settings" class="sec">
     <h3>관리사무소 정보</h3>
     <p class="hint">민원인 회신 문구 머리말과 문의처에 들어갑니다.</p>
@@ -1264,6 +1265,7 @@ function settingsView(){
     </div>
     ${!SERVER || S.hq ? '<p class="hint">복원용 파일(.json)은 서버에 다시 넣을 때 쓰는 저장용입니다. 「열어보기」로 내용을 표로 확인하고 엑셀로 바꾸거나 서버에 합칠 수 있습니다.</p>' : ''}
     ${backupPreview()}
+  </div>
   </div>
   <div class="btns"><button type="button" class="btn" data-act="cancel">닫기</button></div>`;
 }
