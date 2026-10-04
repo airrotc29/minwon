@@ -1248,7 +1248,7 @@ function settingsView(){
     <form id="f-staff" class="grid2">
       <label class="fld"><span>이름</span><input type="text" id="st-name" required placeholder="이름"></label>
       <label class="fld"><span>담당 업무</span><input type="text" id="st-duty" placeholder="전기 / 설비 / 경비 / 미화"></label>
-      <div class="btns" style="align-self:end"><button type="submit" class="btn">직원 추가</button></div>
+      <div class="btns" style="align-self:end"><button type="submit" class="btn yellow">직원 추가</button></div>
     </form>
   </div>
   ${staffLinkSection()}
@@ -1302,10 +1302,9 @@ function staffLinkSection(){
   const link = staffLink();
   return `<div class="sec act">
     <h3>직원 접속 링크</h3>
-    <p class="hint">직원에게 아래 링크를 카톡으로 보내 주세요. 직원은 링크를 한 번 열면 <b>${esc(siteName())}</b> 직원 화면이 열리고, 화면 아래 <b>바탕화면에 추가</b>를 누르면 다음부터 아이콘으로 들어옵니다. 직원이 바뀌면 <b>링크 새로 만들기</b>를 누르세요. 예전 링크는 바로 막힙니다.</p>
+    <p class="hint">직원에게 아래 링크를 보내 주세요. 직원은 링크를 한 번 열면 <b>${esc(siteName())}</b> 직원 화면이 열리고, 화면 아래 <b>바탕화면에 추가</b>를 누르면 다음부터 아이콘으로 들어옵니다. 직원이 바뀌면 <b>링크 새로 만들기</b>를 누르세요. 예전 링크는 바로 막힙니다.</p>
     ${link ? `<code class="linktext" id="staff-link">${esc(link)}</code>
       <div class="btns">
-        <button type="button" class="btn kakao" data-act="link-share">카톡으로 보내기</button>
         <button type="button" class="btn" data-act="link-copy">링크 복사</button>
         <span class="spacer"></span>
         <button type="button" class="btn danger" data-act="link-rotate">링크 새로 만들기</button>
@@ -1593,10 +1592,6 @@ document.addEventListener('click', e => {
     run(null, () => store.rotateStaffLink(), '직원 접속 링크를 만들었습니다');
   }
   else if(a === 'link-copy'){ copyText(staffLink()); }
-  else if(a === 'link-share'){
-    const link = staffLink(), text = `[${S.settings.company || COMPANY} ${siteName()}] 민원 처리부 직원 접속 링크입니다. 휴대폰에서 한 번 열어 두세요.\n${link}`;
-    if(navigator.share) navigator.share({text}).catch(() => {}); else copyText(text);
-  }
   else if(a === 'role'){ if(S.mgrOnly || (b.dataset.role === 'manager' && !S.canManage)) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
   else if(a === 'open'){ S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }

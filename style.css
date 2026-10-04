@@ -503,3 +503,6 @@ body.readonly #staff-picker{display:none!important}
 .seg button[aria-pressed="true"]{font-weight:700;color:#141B2D;border-color:var(--accent);box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .seg button[aria-pressed="false"]{border-color:#E0B400}
 #role-staff[aria-pressed="false"]{border-color:var(--line)}
+
+.btn.yellow{background:#FFE15A;border-color:#E0B400;color:#141B2D;font-weight:700}
+.btn.yellow:hover{background:#FFD83A;border-color:#C79F00}
