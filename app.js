@@ -1434,8 +1434,8 @@ const EV = {
   rework:{c:'--urgent', t:e => `재작업 지시 → ${evNames(e)}`},
   progress:{c:'--st-progress', t:e => `${staffName(e.staffId)} 진행 보고`},
   done:{c:'--st-done', t:e => `${staffName(e.staffId)} 완료 보고`},
-  notice:{c:'--accent', t:e => `민원인 중간 안내 (${e.method || ''})`},
-  replied:{c:'--st-replied', t:e => `민원인 회신 완료 (${e.method || ''})`}
+  notice:{c:'--accent', t:e => `민원인 중간 안내${e.method ? ` (${e.method})` : ''}`},
+  replied:{c:'--st-replied', t:e => `민원인 회신 완료${e.method ? ` (${e.method})` : ''}`}
 };
 
 function complaintView(){
@@ -1493,15 +1493,14 @@ function managerActions(c){
     html += `<${final ? 'div class="act"' : 'details class="more" id="dt-notice"'}>
       ${final ? '<h3>민원인에게 처리 결과 회신</h3>' : '<summary>민원인에게 중간 안내</summary>'}
       <form id="f-reply" class="sec" data-final="${final}">
-        <p class="hint">문구를 고친 뒤 <b>카톡으로 보내기</b>(휴대폰) 또는 복사해 보내거나 인터폰·방문으로 알리고, 알린 방법을 기록하세요.</p>
+        <p class="hint">문구를 고친 뒤 <b>카톡으로 보내기</b>(휴대폰)나 <b>문구 복사</b>로 보내고, 보낸 뒤 아래 버튼으로 기록하세요.</p>
         <textarea id="rp-text" rows="9">${esc(replyTemplate(c))}</textarea>
         ${shareRefs(c).length ? `<label class="check"><input type="checkbox" id="rp-photos" checked> ${final ? '완료' : '진행'} 사진 ${shareRefs(c).length}장도 보내기 <small>(문구를 먼저, 이어서 사진을 따로 보냅니다)</small></label>${thumbsHTML(shareRefs(c))}` : ''}
         <div class="btns">
           <button type="button" class="btn kakao" id="share-btn" data-act="share-kakao">${shareLabel(c)}</button>
           <button type="button" class="btn" data-act="copy-reply">문구 복사</button>
-          <button type="button" class="btn" data-act="reset-reply">기본 문구로</button>
           <span class="spacer"></span>
-          <select id="rp-method" style="width:auto" aria-label="보낸 방법">${opts(METHODS,'문자')}</select>
+          <input type="hidden" id="rp-method" value="">
           <button type="submit" class="btn primary">${final ? '회신완료로 기록' : '안내 기록'}</button>
         </div>
       </form>
