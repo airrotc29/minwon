@@ -1,6 +1,6 @@
 {
-  "name": "선민종합관리 민원 처리부",
-  "short_name": "민원처리부",
+  "name": "선민종합관리 민원관리 System",
+  "short_name": "민원관리",
   "description": "접수 · 지시 · 보고 · 회신",
   "start_url": "./",
   "scope": "./",

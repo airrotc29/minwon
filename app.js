@@ -441,7 +441,7 @@ function renderBrand(){
   $('#co-name').textContent = s.company || COMPANY;
   const bn = s.buildingName || (SERVER ? siteName() : '');
   $('#bname').textContent = S.panel === 'hq' ? '본사 · 전체 사업장' : bn ? `${bn} 관리사무소` : '접수 · 지시 · 보고 · 회신';
-  document.title = `${s.company || COMPANY} 민원 처리부`;
+  document.title = `${s.company || COMPANY} 민원관리 System`;
 }
 
 /* 로그인 계정에 따라 관리소장 화면 허용 여부와 '나는' 직원을 정한다.
@@ -474,7 +474,7 @@ const isIOS = /iPhone|iPad|iPod/.test(UA);
 function setManifest(){
   if(location.protocol !== 'https:') return;
   const base = location.origin + location.pathname.replace(/[^/]*$/, '');
-  const m = {name:'선민종합관리 민원 처리부', short_name:'민원처리부', display:'standalone', background_color:'#EEF1F6', theme_color:'#1E3A7B', lang:'ko',
+  const m = {name:'선민종합관리 민원관리 System', short_name:'민원관리', display:'standalone', background_color:'#EEF1F6', theme_color:'#1E3A7B', lang:'ko',
     start_url:location.origin + location.pathname + (/^#staff=/.test(location.hash) ? location.hash : ''), scope:base,
     icons:[{src:base + 'icon-192.png', sizes:'192x192', type:'image/png'}, {src:base + 'icon-512.png', sizes:'512x512', type:'image/png', purpose:'any maskable'}]};
   const link = document.querySelector('link[rel=manifest]');

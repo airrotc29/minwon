@@ -1,4 +1,4 @@
-# 선민종합관리 민원 처리부
+# 선민종합관리 민원관리 System
 
 관리사무소 민원을 **접수 → 지시 → 보고 → 회신** 순서로 처리하는 웹 앱입니다.
 화면은 GitHub Pages(`https://airrotc29.github.io/minwon/`)에서 열리고, 데이터는 **Supabase 서버 데이터베이스**에 저장되어
