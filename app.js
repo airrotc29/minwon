@@ -701,11 +701,11 @@ function renderSummary(){
       ${[['todo', '내 할 일'], ['reported', '보고 완료'], ['replied', '회신 끝']].map(([f, l]) => { const k = n(f); return btn(f, `stab${f === 'todo' && k ? ' hot' : ''}`, `<b>${k}</b><span>${l}</span>`); }).join('')}
     </div>${mine ? `<div class="sline">${btn('mine', 'slink', `내가 접수한 민원 <b>${mine}</b>건 보기`)}</div>` : ''}`;
   }else{
-    const card = (f, small, label, icon) => { const k = n(f); return btn(f, `todo-card k-${f}${k ? ' spark' : ''}`, `<small><i aria-hidden="true">${icon}</i>${small}</small><b>${k}</b><span>${label}</span>`, `${label.replace(/<br>/g, ' ')} ${k}건`); };
+    const card = (f, small, label, icon) => { const k = n(f); return btn(f, `todo-card k-${f}${k ? ' spark' : ''}`, `<small><i aria-hidden="true">${icon}</i>${small}</small><span>${label}</span><b>${k}<em>건</em></b>`, `${small} ${label} ${k}건`); };
     const step = (f, label) => btn(f, 'fstep', `<b>${n(f)}</b><span>${label}</span>`);
     const od = n('overdue');
     html = `<div class="mcap">소장님이 할 일</div>
-      <div class="todo-cards">${card('received', '새 민원', '직원에게<br>지시해 주세요', '📋')}${card('done', '직원 완료 보고', '민원인에게<br>회신해 주세요', '💬')}</div>
+      <div class="todo-cards">${card('received', '직원에게', '지시해 주세요', '📋')}${card('done', '민원인에게', '회신해 주세요', '💬')}</div>
       <div class="mcap">진행 흐름 <span>(누르면 그 단계 목록)</span></div>
       <div class="fflow">${step('assigned', '지시됨')}<i aria-hidden="true">›</i>${step('progress', '처리중')}<i aria-hidden="true">›</i>${step('replied', '회신완료')}</div>
       <div class="mtot">${btn('open', 'tlink', `미결 <b>${n('open')}</b>`)}${btn('overdue', `tlink${od ? ' bad' : ''}`, `기한 초과 <b>${od}</b>`)}<span class="sp"></span>${btn('all', 'tlink', `전체 <b>${n('all')}</b> 보기`)}</div>`;
