@@ -1147,7 +1147,8 @@ function openKpiPopup(k){
     const rows = S.db.sites.filter(x => !x.archived).sort(bySiteName).map(st => { const kp = siteKpis(st.id); return `<tr class="click" data-act="hq-enter" data-site="${esc(st.id)}"><td><b>${esc(st.name)}</b></td><td class="n">${kp.open}</td><td class="n${kp.done ? ' warn' : ''}">${kp.done}</td><td class="n${kp.overdue ? ' warn' : ''}">${kp.overdue}</td><td class="n">${kp.month}</td><td class="n">${kp.staff}</td></tr>`; }).join('');
     body = rows ? `<table class="rtable keep"><thead><tr><th>사업장</th><th>미결</th><th>회신 대기</th><th>기한 초과</th><th>이달 접수</th><th>직원</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="hint">운영 중인 사업장이 없습니다.</p>';
   }else{
-    const list = hqKpiList(k).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    // 사업장 이름순으로 묶고, 같은 사업장 안에서는 최근 접수순
+    const list = hqKpiList(k).sort((a, b) => siteName(siteOf(a)).localeCompare(siteName(siteOf(b)), 'ko') || (b.createdAt || '').localeCompare(a.createdAt || ''));
     const rows = list.map(c => { const st = ST[c.status]; return `<tr class="click" data-act="hq-enter" data-site="${esc(siteOf(c))}" data-id="${esc(c.id)}"><td>${esc(siteName(siteOf(c)))}</td><td>${esc(c.location || [c.dong, c.ho].filter(Boolean).join(' '))}</td><td class="t">${c.urgent ? '<span class="tag">긴급</span> ' : ''}${esc(c.title || '')}</td><td>${esc(c.category || '')}</td><td><span class="pill" style="--c:var(--st-${esc(c.status)})">${esc(st ? st.chip : c.status)}</span></td><td>${esc(c.assignee ? staffName(c.assignee) : '미배정')}</td><td class="nowrap">${k === 'overdue' ? esc(c.due || '') : fmt(c.createdAt).slice(0, 9)}</td></tr>`; }).join('');
     // 휴대폰에서는 표 대신 카드 목록(CSS로 화면 폭에 따라 하나만 보임)
     const cards = list.map(c => { const st = ST[c.status]; return `<li class="pc" data-act="hq-enter" data-site="${esc(siteOf(c))}" data-id="${esc(c.id)}" tabindex="0">
