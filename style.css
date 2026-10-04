@@ -694,3 +694,9 @@ a.tel{color:var(--accent);font-weight:600;text-decoration:underline}
 .reply-phone .btns{gap:6px}
 .reply-phone .btn{background:#fff;color:#141B2D;border-color:#9AA3B5}
 .reply-phone .btn.sms{background:#1E3A7B;color:#fff;border-color:#1E3A7B}
+
+/* 보낼 보고함 */
+.outbox{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FFF3B0;border:1.5px solid #E0B400;color:#141B2D;border-radius:12px;padding:10px 12px;font-size:13.5px}
+.outbox[hidden]{display:none}
+.outbox span{flex:1;min-width:200px}
+.outbox .btn{background:#fff;color:#141B2D}

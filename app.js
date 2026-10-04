@@ -143,6 +143,7 @@ function reload(){
       applyData(assemble(c, e, s, st, si, us));
       checkNew();
       setSync('ok');
+      setTimeout(flushOutbox, 500);
       render();
     } catch(err){
       console.error(err);
@@ -339,7 +340,8 @@ const idb = {
     return new Promise((res, rej) => { const t = db.transaction('photos', mode); const q = fn(t.objectStore('photos')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); });
   },
   put(id, blob){ return this.tx('readwrite', st => st.put(blob, id)); },
-  get(id){ return this.tx('readonly', st => st.get(id)); }
+  get(id){ return this.tx('readonly', st => st.get(id)); },
+  del(id){ return this.tx('readwrite', st => st.delete(id)); }
 };
 async function uploadPhoto(path, blob){
   await q(sb.storage.from('photos').upload(path, blob, {contentType:'image/jpeg', upsert:false}));
@@ -686,6 +688,7 @@ function render(){
   const nt = $('#notice'); nt.hidden = !warn; nt.textContent = warn;
 
   renderSummary(); renderList(); renderDetail();
+  renderOutbox();
   syncHistory();
 }
 
@@ -767,6 +770,8 @@ function renderDetail(){
   openDet.forEach(id => { const d = document.getElementById(id); if(d) d.open = true; });
   if(focusId){ const f = document.getElementById(focusId); if(f) f.focus(); }
   hydratePhotos(el);
+  const rp = document.getElementById('rp-report');
+  if(rp && !rp.value && S.selectedId){ const d = lsGet(draftKey(S.selectedId)); if(d){ rp.value = d; } }
   if(S.panel === 'hq') drawHqCharts();
   if(S.panel === 'report' && el.querySelector('#report-preview')){
     // 다시 그려도 저장 안 한 의견이 미리보기에 남도록
@@ -1571,7 +1576,7 @@ function staffActions(c, mine){
   const call = c.phone ? `<div class="reply-phone"><span>민원인 <b>${esc(c.phone)}</b></span><span class="btns"><button type="button" class="btn sm primary" data-act="staff-call" data-id="${esc(c.id)}">📞 전화하기</button></span></div>` : '';
   return `<div class="act callout k-todo">${note}<form id="f-report" class="sec">
     <h3>처리 결과 보고</h3>${call}
-    <label class="fld"><span>보고 내용</span><textarea id="rp-report" required placeholder="예) 1303호 욕실 배관 누수 확인. 배관 교체 완료, 1203호 천장 건조 후 도배는 세대에서 진행하기로 함"></textarea></label>
+    <label class="fld"><span>보고 내용 <small>(쓰는 내용은 자동 저장)</small></span><textarea id="rp-report" required placeholder="예) 1303호 욕실 배관 누수 확인. 배관 교체 완료, 1203호 천장 건조 후 도배는 세대에서 진행하기로 함"></textarea></label>
     ${photoPicker('처리 전·후 사진')}
     <div class="btns"><button type="submit" class="btn" value="progress">진행 보고</button><button type="submit" class="btn primary" value="done">완료 보고</button></div>
     <p class="hint">진행 보고는 상태를 ‘처리중’으로, 완료 보고는 ‘처리완료’로 바꾸고 소장에게 회신 대기로 알립니다.</p>
@@ -1715,6 +1720,59 @@ function failMsg(e){
   if(e && e.code === 'server') return '서버에 저장하지 못했습니다: ' + e.message;
   return '저장하지 못했습니다. 잠시 후 다시 시도하세요.';
 }
+/* 보고 상태 계산: 함께 담당이면 모두 완료 보고해야 '처리완료' */
+function reportPatch(c, kind, me){
+  const patch = {status:kind};
+  let waiting = [];
+  if(kind === 'done'){
+    patch.rework = false;
+    const had = doneBy(c); had.add(me);
+    waiting = assigneesOf(c).includes(me) ? assigneesOf(c).filter(id => !had.has(id)) : [];
+    if(waiting.length) patch.status = 'progress';
+  }
+  return {patch, waiting};
+}
+/* ---------- 보고 임시 저장 ----------
+   쓰는 중인 보고 글은 기기에 계속 저장(다시 열면 그대로), 연결이 끊긴 채 보낸 보고는 '보낼 보고함'에 두었다가 연결되면 자동 전송 */
+const draftKey = cid => `draft.rp.${cid}`;
+const dropDraft = cid => { try{ localStorage.removeItem(draftKey(cid)); }catch(e){} };
+document.addEventListener('input', e => { if(e.target.id === 'rp-report' && S.selectedId) lsSet(draftKey(S.selectedId), e.target.value); });
+const OUTBOX = 'outbox.reports';
+const readOutbox = () => { try{ return JSON.parse(lsGet(OUTBOX) || '[]'); }catch(e){ return []; } };
+const writeOutbox = list => lsSet(OUTBOX, JSON.stringify(list));
+async function queueReport(c, kind, text){
+  const id = uid(), keys = [];
+  for(let i = 0; i < pendingPhotos.length; i++){ const k = `outbox:${id}:${i}`; await idb.put(k, pendingPhotos[i].blob); keys.push(k); }
+  writeOutbox(readOutbox().concat([{id, cid:c.id, kind, text, me:S.me, at:now(), keys, title:c.title || '', place:c.location || ''}]));
+  renderOutbox();
+}
+let flushing = false;
+async function flushOutbox(){
+  if(flushing || !SERVER || !S.user || !navigator.onLine) return;
+  let list = readOutbox(); if(!list.length) return;
+  flushing = true; let sent = 0;
+  try{
+    for(const item of list.slice()){
+      const c = S.db.complaints.find(x => x.id === item.cid);
+      if(!c){ list = list.filter(x => x.id !== item.id); writeOutbox(list); continue; }    // 그사이 삭제된 민원
+      const refs = [];
+      for(const k of item.keys){ const blob = await idb.get(k); if(blob) refs.push(await savePhoto(blob, c.id)); }
+      const {patch} = reportPatch(c, item.kind, item.me);
+      await store.update(c.id, patch, Object.assign(event(item.kind, {staffId:item.me, text:item.text, queuedAt:item.at}), refs.length ? {photos:refs} : {}));
+      for(const k of item.keys) await idb.del(k).catch(() => {});
+      list = list.filter(x => x.id !== item.id); writeOutbox(list); sent++;
+    }
+  }catch(e){ console.warn('보낼 보고함 전송 보류', e); }
+  finally{ flushing = false; renderOutbox(); if(sent){ toast(`저장해 둔 보고 ${sent}건을 보냈습니다.`); render(); } }
+}
+function renderOutbox(){
+  const el = $('#outbox'); if(!el) return;
+  const list = readOutbox();
+  el.hidden = !list.length;
+  if(list.length) el.innerHTML = `<span>📮 <b>보내지 못한 보고 ${list.length}건</b>이 이 기기에 저장되어 있습니다. 인터넷이 연결되면 자동으로 보냅니다.</span><button type="button" class="btn sm" data-act="outbox-send">지금 보내기</button>`;
+}
+window.addEventListener('online', () => setTimeout(flushOutbox, 1500));
+setInterval(() => { if(readOutbox().length) flushOutbox(); }, 30000);
 async function run(form, fn, okMsg){
   const btns = form ? form.querySelectorAll('button') : [];
   btns.forEach(b => b.disabled = true);
@@ -1761,6 +1819,7 @@ document.addEventListener('click', e => {
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
   else if(a === 'hq'){ if(!S.allSites) return; goHq(); }
+  else if(a === 'outbox-send'){ if(!navigator.onLine){ toast('아직 인터넷이 연결되지 않았습니다.'); return; } flushOutbox(); }
   else if(a === 'staff-call'){ const c = find(b.dataset.id); if(c && c.phone) openScheme(`tel:${c.phone.replace(/[^\d+]/g, '')}`); }
   else if(a === 'reply-call' || a === 'reply-sms'){
     const c = find(S.selectedId); if(!c || !c.phone) return;
@@ -2038,15 +2097,23 @@ document.addEventListener('submit', e => {
   }
   else if(f.id === 'f-report' && c){
     const kind = (e.submitter && e.submitter.value) || 'progress', text = val('rp-report');
-    const patch = { status:kind };
-    let waiting = [];
-    if(kind === 'done'){
-      patch.rework = false;
-      const had = doneBy(c); had.add(S.me);
-      waiting = assigneesOf(c).includes(S.me) ? assigneesOf(c).filter(id => !had.has(id)) : [];   // 담당이 아닌 접수자의 완료 보고는 바로 완료
-      if(waiting.length) patch.status = 'progress';           // 다른 담당자의 완료 보고가 남아 있으면 아직 처리중
-    }
-    run(f, async () => store.update(c.id, patch, event(kind, Object.assign({staffId:S.me, text}, await uploadPending(c.id).then(p => p.length ? {photos:p} : {}))), `${kind === 'done' ? '완료 보고' : '진행 보고'}: ${c.location} (${staffName(S.me)})`), kind === 'done' ? (waiting.length ? `완료 보고를 올렸습니다. ${waiting.map(staffName).join(', ')}님의 보고를 기다립니다` : '완료 보고를 올렸습니다') : '진행 보고를 올렸습니다');
+    const {waiting} = reportPatch(c, kind, S.me);
+    const okMsg = kind === 'done' ? (waiting.length ? `완료 보고를 올렸습니다. ${waiting.map(staffName).join(', ')}님의 보고를 기다립니다` : '완료 보고를 올렸습니다') : '진행 보고를 올렸습니다';
+    // 인터넷이 끊겼으면(기계실·지하 등) 이 기기에 저장해 두고 연결되면 자동으로 보낸다
+    const queue = async () => { await queueReport(c, kind, text); dropDraft(c.id); clearPending(); resetDetail(); toast('인터넷이 끊겨 이 기기에 저장했습니다. 연결되면 자동으로 보냅니다.'); };
+    if(SERVER && !navigator.onLine){ queue(); return; }
+    const btns = f.querySelectorAll('button'); btns.forEach(x => x.disabled = true);
+    (async () => {
+      try{
+        const photos = await uploadPending(c.id);
+        const {patch} = reportPatch(c, kind, S.me);
+        await store.update(c.id, patch, event(kind, Object.assign({staffId:S.me, text}, photos.length ? {photos} : {})));
+        dropDraft(c.id); toast(okMsg); resetDetail();
+      }catch(err){
+        if(SERVER && (err && err.code === 'network' || err instanceof TypeError || !navigator.onLine)) await queue();
+        else { console.error(err); toast(failMsg(err)); render(); }
+      }finally{ btns.forEach(x => x.disabled = false); }
+    })();
   }
   else if(f.id === 'f-login'){
     const btn = f.querySelector('button'); btn.disabled = true;
