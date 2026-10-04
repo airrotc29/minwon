@@ -524,10 +524,11 @@ function render(){
   document.body.classList.toggle('no-access', noAccess);
   if(noAccess) return;
   const hqPanel = S.panel === 'hq';
-  $('#hq-tools').hidden = !S.hq;
+  $('#hq-tools').hidden = !S.hq || hqPanel;
   $('#hq-back').hidden = hqPanel;
+  document.body.classList.toggle('hq-mode', !!S.hq && !hqPanel);
+  tipEl.hidden = true;
   const ss = $('#site-select');
-  ss.hidden = !S.hq || hqPanel;
   ss.innerHTML = S.db.sites.filter(x => !x.archived || x.id === S.site).map(x => `<option value="${esc(x.id)}">${esc(x.name)}${x.archived ? ' (보관)' : ''}</option>`).join('');
   ss.value = S.site;
   $('.seg').hidden = hqPanel;

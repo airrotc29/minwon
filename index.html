@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=36">
+  <link rel="stylesheet" href="style.css?v=37">
 </head>
 <body>
 <div class="app">
@@ -32,10 +32,6 @@
     <div class="tools">
       <button type="button" class="sync" id="sync" data-act="sync-now" hidden></button>
       <button type="button" class="acct" id="acct" data-act="logout" hidden></button>
-      <span id="hq-tools" class="tools" hidden>
-        <button type="button" class="btn hqbtn" id="hq-back" data-act="hq">본사 현황</button>
-        <select id="site-select" aria-label="사업장 선택" hidden></select>
-      </span>
       <div class="seg" role="group" aria-label="화면 선택">
         <button type="button" id="role-manager" data-act="role" data-role="manager" aria-pressed="true">관리소장</button>
         <button type="button" id="role-staff" data-act="role" data-role="staff" aria-pressed="false">직원</button>
@@ -54,6 +50,11 @@
     <div class="empty"><div class="msg"></div>
       <div class="btns"><button type="button" class="btn" data-act="page-reload">다시 시도</button><button type="button" class="btn" data-act="logout">로그아웃</button></div></div>
   </section>
+  <div class="hq-bar" id="hq-tools" hidden>
+    <button type="button" class="btn hqbtn" id="hq-back" data-act="hq">← 본사 현황으로 돌아가기</button>
+    <label class="hq-bar-site">지금 보는 사업장 <select id="site-select" aria-label="사업장 선택"></select></label>
+    <span class="hq-bar-note">본사 담당자로 이 사업장의 관리소장 화면을 보고 있습니다.</span>
+  </div>
   <div class="notice" id="notice" role="status" hidden></div>
   <button type="button" class="alert" id="reply-alert" data-act="filter" data-f="done" hidden></button>
   <nav class="summary" id="summary" aria-label="상태별 보기"></nav>
@@ -92,6 +93,6 @@
 <div id="print-area" aria-hidden="true"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js?v=11"></script>
-<script src="app.js?v=36"></script>
+<script src="app.js?v=37"></script>
 </body>
 </html>
