@@ -141,6 +141,7 @@ function reload(){
     try {
       const [c, e, s, st, si, us] = await Promise.all(['complaints', 'events', 'staff', 'settings', 'sites', 'app_users'].map(fetchAll));
       applyData(assemble(c, e, s, st, si, us));
+      checkNew();
       setSync('ok');
       render();
     } catch(err){
@@ -177,9 +178,82 @@ function applyChange(table, p){
     if(p.eventType === 'DELETE') db.users = db.users.filter(u => u.email !== old.email);
     else { const i = db.users.findIndex(u => u.email === row.email); if(i >= 0) db.users[i] = rowToUser(row); else db.users.push(rowToUser(row)); }
   }
+  if(table === 'complaints') checkNew();
   deriveSite();
   setSync('ok');
   render();
+}
+
+/* ---------- 새 민원 소리 알림 ----------
+   다른 사람이 새 민원을 접수하면 소리·진동·상단 알림띠로 알린다. 앱(화면)이 열려 있는 동안 동작한다.
+   브라우저 규칙상 소리는 화면을 한 번 건드린 뒤부터 나고, 앱이 완전히 꺼진 상태에서는 울릴 수 없다. */
+let knownIds = null;                 // 이미 본 민원 id (처음 불러올 때는 알리지 않음)
+const mineIds = new Set();           // 내가 접수한 민원은 알리지 않음
+let audioCtx = null, audioReady = false;
+let callQueue = [];
+const alertOn = () => { const v = lsGet('alertSound'); return v == null ? !S.allSites : v === '1'; };   // 본사·임원은 기본 꺼짐
+function unlockAudio(){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    audioReady = true;
+  }catch(e){}
+  renderBell();
+}
+document.addEventListener('pointerdown', () => { if(!audioReady) unlockAudio(); }, {once:false, passive:true});
+function chime(){
+  if(!audioCtx) return;
+  try{
+    const t0 = audioCtx.currentTime + 0.02;
+    const notes = [659.25, 783.99, 1046.5];                       // 미 · 솔 · 도
+    [0, 1.3].forEach(rep => notes.forEach((f, i) => {
+      const t = t0 + rep + i * 0.28, o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+      o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + 0.75);
+    }));
+  }catch(e){}
+}
+function placeOf(c){ return c.location || [c.dong, c.ho].filter(Boolean).join(' ') || ''; }
+function notifyNew(list){
+  if(!alertOn() || !list.length) return;
+  chime();
+  try{ if(navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 500]); }catch(e){}
+  callQueue = callQueue.concat(list);
+  renderCall();
+  const c = list[list.length - 1];
+  const text = `${S.allSites ? siteName(siteOf(c)) + ' · ' : ''}${placeOf(c)} ${c.category || ''} ${c.title || ''}`.trim();
+  if(document.hidden){
+    document.title = `(${callQueue.length}) 새 민원 접수 · ${document.title.replace(/^\(\d+\) 새 민원 접수 · /, '')}`;
+    if('Notification' in window && Notification.permission === 'granted'){
+      const opt = {body:text, tag:'minwon-new', renotify:true, vibrate:[300, 150, 300], icon:'icon-192.png'};
+      navigator.serviceWorker && navigator.serviceWorker.ready ? navigator.serviceWorker.ready.then(r => r.showNotification('새 민원 접수', opt)).catch(() => { try{ new Notification('새 민원 접수', opt); }catch(e){} }) : (() => { try{ new Notification('새 민원 접수', opt); }catch(e){} })();
+    }
+  }
+}
+function renderCall(){
+  const el = $('#newcall'); if(!el) return;
+  if(!callQueue.length){ el.hidden = true; return; }
+  const c = callQueue[callQueue.length - 1], more = callQueue.length - 1;
+  el.hidden = false;
+  el.innerHTML = `<span class="nc-ico" aria-hidden="true">🔔</span><span class="nc-text"><b>새 민원 접수${more ? ` 외 ${more}건` : ''}</b>${S.allSites ? esc(siteName(siteOf(c))) + ' · ' : ''}${esc(placeOf(c))} ${esc(c.category || '')} ${esc(c.title || '')}</span><button type="button" class="btn sm" data-act="call-open" data-id="${esc(c.id)}">확인</button>`;
+}
+/* 새로 생긴 민원이 있으면 알린다. 접수한 지 30분이 넘은 것(복원·오래 꺼져 있던 뒤)은 알리지 않는다 */
+function checkNew(){
+  if(!SERVER || !S.user) return;
+  const ids = S.db.complaints.map(c => c.id);
+  if(knownIds === null){ knownIds = new Set(ids); return; }
+  const fresh = S.db.complaints.filter(c => !knownIds.has(c.id) && !mineIds.has(c.id) && Date.now() - new Date(c.createdAt || 0).getTime() < 30 * 60000);
+  ids.forEach(id => knownIds.add(id));
+  if(fresh.length) notifyNew(fresh);
+}
+function renderBell(){
+  const b = $('#bell'); if(!b) return;
+  b.hidden = !(SERVER && S.user);
+  const on = alertOn();
+  b.textContent = !on ? '🔕 알림 꺼짐' : audioReady ? '🔔 알림 켜짐' : '🔔 눌러서 소리 켜기';
+  b.classList.toggle('off', !on); b.classList.toggle('locked', on && !audioReady);
+  b.setAttribute('aria-pressed', on);
 }
 let channel = null;
 function subscribe(){
@@ -193,7 +267,7 @@ function subscribe(){
   });
 }
 setInterval(() => { if(document.visibilityState === 'visible') reload(); }, REFRESH_MS);
-document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') reload(); });
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ document.title = document.title.replace(/^\(\d+\) 새 민원 접수 · /, ''); reload(); } });
 window.addEventListener('online', () => reload());
 
 async function write(fn){
@@ -329,6 +403,7 @@ function photoTotal(){ return S.complaints.reduce((n, c) => n + photoCount(c), 0
 const store = {
   async addComplaint(data, id){
     id = id || uid();
+    mineIds.add(id);
     const {events, ...fields} = data;
     if(SERVER) await write(() => q(sb.rpc('add_complaint', {cid:id, cdata:fields, evs:events, sid:S.site})));
     if(!S.db.complaints.some(c => c.id === id)){ S.db.complaints.unshift(Object.assign({id, site:S.site}, data)); deriveSite(); }
@@ -518,6 +593,7 @@ function render(){
   document.body.classList.toggle('no-access', linkFail);
   $('#login').hidden = !needLogin;
   $('#acct').hidden = !(SERVER && S.user);
+  renderBell();
   if(linkFail){
     $('#no-access').hidden = false;
     $('#no-access .msg').innerHTML = `<strong>직원 접속 링크로 연결하지 못했습니다</strong>${esc(S.linkError)}`;
@@ -1567,6 +1643,21 @@ document.addEventListener('click', e => {
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
   else if(a === 'hq'){ if(!S.allSites) return; goHq(); }
+  else if(a === 'bell'){
+    const turnOn = !alertOn(); lsSet('alertSound', turnOn ? '1' : '0');
+    if(turnOn){
+      unlockAudio(); chime();
+      try{ if('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); }catch(e){}
+      toast('새 민원이 접수되면 소리와 진동으로 알려 드립니다. 이 앱을 열어 둔 동안 동작합니다.');
+    }else toast('소리 알림을 껐습니다.');
+    renderBell();
+  }
+  else if(a === 'call-open'){
+    const id = b.dataset.id, c = S.db.complaints.find(x => x.id === id);
+    callQueue = []; renderCall();
+    if(c && S.allSites && siteOf(c) !== S.site) enterSite(siteOf(c), false, id);
+    else if(c){ S.selectedId = id; S.panel = null; S.filter = 'all'; render(); }
+  }
   else if(a === 'close-detail'){ closeSheet(); }
   else if(a === 'hq-enter'){
     if(!S.allSites) return;
@@ -1906,6 +1997,7 @@ async function onSignedIn(user){
 }
 function onSignedOut(){
   S.user = null; S.access = {}; S.hq = false; S.exec = false; S.allSites = false; S.panel = null;
+  knownIds = null; callQueue = []; renderCall();
   if(channel){ sb.removeChannel(channel); channel = null; }
   applyData(emptyData());
   photoCache.clear();

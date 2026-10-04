@@ -538,3 +538,17 @@ mark.hl b{color:#141B2D}
 .chip.wait.zero b{color:#7A8193}
 .chip.wait.spark b,.chip.wait.spark[aria-pressed="true"] b{color:#D01E12;font-weight:800;animation:num-blink 1s steps(1,end) infinite}
 @keyframes num-blink{0%,55%{opacity:1}56%,100%{opacity:.12}}
+
+/* 새 민원 소리 알림 */
+.bell{border:1px solid #E0B400;background:#FFE15A;color:#141B2D;font:inherit;font-weight:600;font-size:13px;border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap}
+.bell.off{background:var(--sunk);border-color:var(--line);color:var(--muted);font-weight:500}
+.bell.locked{animation:spark-glow 1.6s ease-in-out infinite}
+.newcall{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;background:#D01E12;color:#fff;border-radius:12px;padding:10px 12px;box-shadow:0 6px 18px rgba(208,30,18,.4);animation:call-pulse 1.2s ease-in-out infinite}
+.newcall[hidden]{display:none}
+.nc-ico{font-size:22px;animation:call-ring .9s ease-in-out infinite;transform-origin:50% 0}
+.nc-text{flex:1;min-width:0;display:flex;flex-direction:column;font-size:13.5px;line-height:1.4}
+.nc-text b{font-size:15px}
+.newcall .btn{background:#fff;color:#D01E12;border-color:#fff;font-weight:700}
+@keyframes call-pulse{0%,100%{box-shadow:0 6px 18px rgba(208,30,18,.35)}50%{box-shadow:0 6px 26px rgba(208,30,18,.75)}}
+@keyframes call-ring{0%,100%{transform:rotate(0)}20%{transform:rotate(18deg)}40%{transform:rotate(-16deg)}60%{transform:rotate(10deg)}80%{transform:rotate(-8deg)}}
+body.sheet .newcall{position:fixed;left:12px;right:12px;top:12px;z-index:70}
