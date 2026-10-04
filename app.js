@@ -438,10 +438,12 @@ function renderBrand(){
     img.onerror = () => { img.hidden = true; mark.hidden = false; };
     img.src = src;
   }
-  $('#co-name').textContent = s.company || COMPANY;
   const bn = s.buildingName || (SERVER ? siteName() : '');
+  // 관리소장·직원 화면: 회사명 대신 '사무소 이름 + 관리단'. 본사·임원은 회사명 그대로
+  const office = !S.allSites && bn ? (/관리단$/.test(bn.trim()) ? bn.trim() : `${bn.trim()} 관리단`) : '';
+  $('#co-name').textContent = office || s.company || COMPANY;
   $('#bname').textContent = S.panel === 'hq' ? '본사 · 전체 사업장' : bn ? `${bn} 관리사무소` : '접수 · 지시 · 보고 · 회신';
-  document.title = `${s.company || COMPANY} 민원관리 System`;
+  document.title = `${office || s.company || COMPANY} 민원관리 System`;
 }
 
 /* 로그인 계정에 따라 관리소장 화면 허용 여부와 '나는' 직원을 정한다.
