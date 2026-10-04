@@ -526,9 +526,6 @@ function render(){
   const hqPanel = S.panel === 'hq';
   /* 휴대폰: 민원을 고르거나 접수·설정·보고 화면을 열면 전체 화면 시트로 띄우고, 뒤로 가기로 닫는다 */
   const sheet = isNarrow() && !hqPanel && !!(S.panel || S.selectedId);
-  if(sheet && !document.body.classList.contains('sheet')){
-    try{ if(!(history.state && history.state.sheet)) history.pushState(Object.assign({}, history.state || {}, {sheet:1}), ''); }catch(e){}
-  }
   document.body.classList.toggle('sheet', sheet);
   $('#hq-tools').hidden = !S.hq || hqPanel;
   document.body.classList.toggle('hq-mode', !!S.hq && !hqPanel);
@@ -561,6 +558,7 @@ function render(){
   const nt = $('#notice'); nt.hidden = !warn; nt.textContent = warn;
 
   renderSummary(); renderList(); renderDetail();
+  syncHistory();
 }
 
 function renderSummary(){
@@ -784,7 +782,7 @@ function reportHTML(ym, meta){
     <h2>${d.carried.length ? 8 : 7}. 다음 달 계획</h2>
     <div class="r-text" id="rv-plan">${esc(meta.plan) || '<span class="rempty">없음</span>'}</div>
 
-    <footer class="r-foot">선민종합관리(주) · 사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</footer>
+    <footer class="r-foot"><svg viewBox="0 0 96 96" width="22" height="22" aria-hidden="true"><rect width="96" height="96" rx="20" fill="#1E3A7B"/><text x="48" y="58" text-anchor="middle" font-family="'Arial Black','Helvetica Neue',Arial,sans-serif" font-weight="900" font-size="38" letter-spacing="-1" fill="#fff">SM</text><rect x="30" y="68" width="36" height="2" rx="1" fill="#4E6497"/></svg><span><b>선민종합관리(주)</b> · FACILITY MANAGEMENT</span><small>사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</small></footer>
   </article>`;
 }
 function reportView(){
@@ -921,7 +919,7 @@ function hqReportHTML(ym){
     <h2>사업장별 현황</h2>
     ${hqSummaryHTML(ym)}
     <ul class="r-notes"><li>'처리 완료'는 민원인 회신까지 마친 건, 처리율은 이달 접수분 기준, 평균 기간은 접수부터 회신까지입니다.</li></ul>
-    <footer class="r-foot">선민종합관리(주) · 사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</footer>
+    <footer class="r-foot"><svg viewBox="0 0 96 96" width="22" height="22" aria-hidden="true"><rect width="96" height="96" rx="20" fill="#1E3A7B"/><text x="48" y="58" text-anchor="middle" font-family="'Arial Black','Helvetica Neue',Arial,sans-serif" font-weight="900" font-size="38" letter-spacing="-1" fill="#fff">SM</text><rect x="30" y="68" width="36" height="2" rx="1" fill="#4E6497"/></svg><span><b>선민종합관리(주)</b> · FACILITY MANAGEMENT</span><small>사람을 먼저 생각하는 관리 · 신뢰로 완성하는 가치</small></footer>
   </article>`;
 }
 function hqView(){
@@ -1142,7 +1140,7 @@ document.addEventListener('pointerdown', moveTip);
 document.addEventListener('scroll', () => { tipEl.hidden = true; }, true);
 $('#popup').addEventListener('click', e => { if(e.target === e.currentTarget) e.currentTarget.close(); });
 /* 팝업을 직접 닫으면 기록에 남겨 둔 '다시 열기' 표시도 지운다 */
-$('#popup').addEventListener('close', () => { const dlg = $('#popup'); if(dlg.dataset.leaving){ delete dlg.dataset.leaving; return; } try{ if(history.state && history.state.popup){ const st = Object.assign({}, history.state); delete st.popup; history.replaceState(st, ''); } }catch(e){} });
+$('#popup').addEventListener('close', () => { const dlg = $('#popup'); if(dlg.dataset.quiet){ delete dlg.dataset.quiet; return; } syncHistory(); });
 
 /* 본사 숫자 타일을 누르면 뜨는 간단한 표 팝업 */
 const KPI_DEF = {
@@ -1187,6 +1185,7 @@ function openKpiPopup(k){
   $('#popup-body').innerHTML = body + (k === 'sites' ? '<p class="hint">줄을 누르면 그 사업장 화면으로 들어갑니다.</p>' : '<p class="hint">줄을 누르면 그 사업장의 해당 민원이 열립니다. 뒤로 가기를 누르면 이 목록으로 돌아옵니다.</p>')
     + (siteId ? `<div class="btns"><button type="button" class="btn" data-act="hq-enter" data-site="${esc(siteId)}">${esc(siteName(siteId))} 화면으로 들어가기 →</button></div>` : '');
   const dlg = $('#popup'); dlg.dataset.k = k; if(!dlg.open) dlg.showModal(); dlg.scrollTop = 0;
+  syncHistory();
 }
 function printHqReport(){
   $('#print-area').innerHTML = hqReportHTML(S.hqMonth);
@@ -1535,12 +1534,12 @@ document.addEventListener('click', e => {
     // 카카오톡 안 브라우저 → 기기의 기본 브라우저(크롬·사파리)로 같은 주소 열기
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
-  else if(a === 'hq'){ if(!S.hq) return; if(history.state && history.state.site) history.back(); else goHq(); }
-  else if(a === 'close-detail'){ if(history.state && history.state.sheet) history.back(); else closeSheet(); }
+  else if(a === 'hq'){ if(!S.hq) return; goHq(); }
+  else if(a === 'close-detail'){ closeSheet(); }
   else if(a === 'hq-enter'){
     if(!S.hq) return;
     const dlg = $('#popup');
-    if(dlg.open){ dlg.dataset.leaving = '1'; dlg.close(); try{ history.replaceState(Object.assign({}, history.state || {}, {popup:dlg.dataset.k}), ''); }catch(e){} }   // 뒤로 가면 이 팝업이 다시 열리게
+    if(dlg.open){ dlg.dataset.quiet = '1'; dlg.close(); }   // 닫힘은 기록하지 않고, 다음 화면만 기록 → 뒤로 가면 이 팝업으로
     enterSite(b.dataset.site, false, b.dataset.id || null);
   }
   else if(a === 'hq-kpi'){ if(!S.hq) return; openKpiPopup(b.dataset.k); }
@@ -1679,11 +1678,6 @@ document.addEventListener('change', async e => {
 /* 본사 담당자가 사업장에 들어가면 브라우저 기록을 한 칸 쌓아, 휴대폰 뒤로 가기 버튼으로 본사 화면에 돌아올 수 있게 한다 */
 function enterSite(id, fromHistory, selectId){
   if(!S.db.sites.some(x => x.id === id)) return;
-  if(S.hq && !fromHistory){
-    // 팝업에서 민원을 골라 들어오는 휴대폰 화면은 기록을 한 칸만 쌓아, 뒤로 가기 한 번에 본사 팝업으로 돌아간다
-    const st = selectId && isNarrow() ? {site:id, sheet:1} : {site:id};
-    try{ if(history.state && history.state.site) history.replaceState(st, ''); else history.pushState(st, ''); }catch(e){}
-  }
   S.site = id; lsSet('site', id);
   S.panel = null; S.selectedId = null; S.filter = 'open'; S.q = '';
   S.role = 'manager'; lsSet('role', 'manager');
@@ -1691,20 +1685,43 @@ function enterSite(id, fromHistory, selectId){
   if(selectId && S.complaints.some(c => c.id === selectId)){ S.selectedId = selectId; const c = find(selectId); if(c && c.status === 'replied') S.filter = 'all'; }
   resetDetail(); window.scrollTo({top:0});
 }
-$('#site-select').addEventListener('change', e => { if(!S.hq) return; if(e.target.value) enterSite(e.target.value); else if(history.state && history.state.site) history.back(); else goHq(); });
+$('#site-select').addEventListener('change', e => { if(!S.hq) return; if(e.target.value) enterSite(e.target.value); else goHq(); });
 function goHq(){ S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
 const isNarrow = () => matchMedia('(max-width:820px)').matches;
 function closeSheet(){ if(S.panel === 'hq') return; S.panel = null; S.selectedId = null; render(); }
+/* ---------- 브라우저 기록: 화면이 바뀔 때마다 한 칸 쌓아, 뒤로 가기가 항상 직전 화면으로 ----------
+   화면 = 사업장 + 열린 패널(접수/설정/보고/본사) + 선택한 민원 + 역할 + 열린 팝업. 필터·검색어는 화면으로 치지 않는다. */
+let restoring = false;
+const viewSnap = () => ({site:S.site, panel:S.panel, sel:S.selectedId, role:S.role, popup:$('#popup').open ? $('#popup').dataset.k : null});
+function syncHistory(){
+  if(restoring || (SERVER && !S.user)) return;
+  const v = viewSnap(), cur = history.state && history.state.view;
+  if(cur && JSON.stringify(cur) === JSON.stringify(v)) return;
+  // 맨 아래에는 '나가기 확인'용 칸을 하나 깔아 두어, 첫 화면에서 뒤로 가기를 누르면 바로 나가지 않고 묻는다
+  try{ if(cur) history.pushState({view:v}, ''); else { history.replaceState({guard:1}, ''); history.pushState({view:v}, ''); } }catch(e){}
+}
 window.addEventListener('popstate', e => {
-  const st = e.state || {};
-  if(S.hq){
-    if(st.site){ if(S.panel === 'hq' || S.site !== st.site) enterSite(st.site, true); }
-    else { goHq(); if(st.popup) openKpiPopup(st.popup); return; }
+  if(e.state && e.state.guard){
+    // 첫 화면에서 뒤로 가기: 확인을 눌러야 앱에서 나간다
+    if(confirm('앱에서 나가시겠습니까?')){ history.back(); }
+    else { try{ history.pushState({view:viewSnap()}, ''); }catch(err){} }
+    return;
   }
-  if(!st.sheet && document.body.classList.contains('sheet')) closeSheet();
+  const v = e.state && e.state.view; if(!v || (SERVER && !S.user)) return;
+  restoring = true;
+  try{
+    if(S.hq && v.site && v.site !== S.site && S.db.sites.some(x => x.id === v.site)){ S.site = v.site; lsSet('site', v.site); deriveSite(); }
+    S.panel = v.panel === 'hq' && !S.hq ? null : v.panel;
+    S.selectedId = v.sel && S.complaints.some(c => c.id === v.sel) ? v.sel : null;
+    if(v.role === 'staff' || (v.role === 'manager' && S.canManage)) { S.role = v.role; lsSet('role', S.role); }
+    const dlg = $('#popup');
+    if(v.popup){ resetDetail(); openKpiPopup(v.popup); }
+    else { if(dlg.open){ dlg.dataset.quiet = '1'; dlg.close(); } resetDetail(); }
+    if(S.panel === 'hq') window.scrollTo({top:0});
+  }finally{ restoring = false; }
 });
 window.addEventListener('resize', () => { if(document.body.classList.contains('sheet') !== (isNarrow() && S.panel !== 'hq' && !!(S.panel || S.selectedId))) render(); });
-try{ if(history.state && history.state.site) history.replaceState(null, ''); }catch(e){}   // 새로 고침 뒤에는 본사 화면부터
+try{ history.replaceState(null, ''); }catch(e){}   // 새로 고침 뒤에는 처음 화면부터 기록
 document.addEventListener('change', e => { if(e.target.id === 'hq-month' && e.target.value){ S.hqMonth = e.target.value; resetDetail(); } });
 $('#me-select').addEventListener('change', e => { S.me = e.target.value || null; lsSet('meStaff', S.me || ''); S.selectedId = null; render(); });
 

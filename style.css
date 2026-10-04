@@ -242,7 +242,10 @@ body.need-login .foot{display:none}
 .r-text{white-space:pre-wrap;border:1px solid #d6dbe6;border-radius:6px;padding:8px 10px;min-height:40px}
 .rempty{color:#8a93a6;margin:0}
 .r-urg{color:#BF3428}
-.r-foot{margin-top:18px;padding-top:8px;border-top:1px solid #c9d0de;text-align:center;font-size:10.5px;color:#556079}
+.r-foot{margin-top:22px;padding-top:10px;border-top:1px solid #c9d0de;text-align:center;font-size:11px;color:#556079;display:flex;flex-direction:column;align-items:center;gap:2px}
+.r-foot svg{margin-bottom:2px}
+.r-foot b{color:#1E3A7B;font-size:12px;letter-spacing:.02em}
+.r-foot small{font-size:10px;color:#7A8193}
 @media screen and (max-width:820px){
   .report-preview{padding:12px}
   .r-head{flex-wrap:wrap}
@@ -257,7 +260,9 @@ body.need-login .foot{display:none}
 /* 인쇄: 보고서만 A4로 */
 #print-area{display:none}
 @media print{
-  @page{size:A4;margin:12mm}
+  @page{size:A4;margin:12mm 12mm 18mm;
+    @bottom-center{content:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 96 96%22 width=%2216%22 height=%2216%22%3E%3Crect width=%2296%22 height=%2296%22 rx=%2220%22 fill=%22%231E3A7B%22/%3E%3Ctext x=%2248%22 y=%2258%22 text-anchor=%22middle%22 font-family=%22Arial Black,Arial,sans-serif%22 font-weight=%22900%22 font-size=%2238%22 fill=%22%23fff%22%3ESM%3C/text%3E%3C/svg%3E") "  선민종합관리(주) · FACILITY MANAGEMENT · 사람을 먼저 생각하는 관리, 신뢰로 완성하는 가치";font-size:9pt;color:#1E3A7B;font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;vertical-align:middle;white-space:nowrap}
+  }
   html,body{background:#fff!important}
   body > *:not(#print-area){display:none!important}
   #print-area{display:block!important}
@@ -268,6 +273,8 @@ body.need-login .foot{display:none}
   .rtable tr,.r-kpis,.r-text{break-inside:avoid}
   .report h2{break-after:avoid}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  /* 회사명·상표를 모든 쪽 하단 중앙에(쪽 여백 상자). 지원하지 않는 브라우저는 본문 끝의 .r-foot이 대신 보인다 */
+  .r-foot{display:none}
 }
 
 /* 본사 화면 */
