@@ -454,6 +454,8 @@ function applyAccount(){
   S.allSites = S.hq || S.exec;
   S.canManage = !SERVER || S.hq || (a.role === 'manager' && a.site_id === S.site);
   if(!S.allSites && S.panel === 'hq') S.panel = null;
+  S.mgrOnly = SERVER && S.canManage && !S.allSites;   // 관리소장 로그인: 직원 화면 전환 없이 관리소장 화면만
+  if(S.mgrOnly) S.role = 'manager';
   if(!S.canManage){
     S.role = S.exec ? 'manager' : 'staff';         // 임원은 관리소장 화면을 읽기 전용으로 본다
     if(S.panel === 'settings' || (S.panel === 'report' && !S.exec)) S.panel = null;
@@ -542,7 +544,7 @@ function render(){
   ss.value = S.site;
   $('.seg').hidden = hqPanel;
   $('#new-btn').hidden = hqPanel || !!S.exec;
-  $('.seg').hidden = hqPanel || !!S.exec;
+  $('.seg').hidden = hqPanel || !!S.exec || !!S.mgrOnly;
   $('#mgr-tools [data-act=settings]').hidden = !!S.exec;
   $('.work').classList.toggle('single', hqPanel);
   $('#list').hidden = hqPanel;
@@ -1595,7 +1597,7 @@ document.addEventListener('click', e => {
     const link = staffLink(), text = `[${S.settings.company || COMPANY} ${siteName()}] 민원 처리부 직원 접속 링크입니다. 휴대폰에서 한 번 열어 두세요.\n${link}`;
     if(navigator.share) navigator.share({text}).catch(() => {}); else copyText(text);
   }
-  else if(a === 'role'){ if(b.dataset.role === 'manager' && !S.canManage) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
+  else if(a === 'role'){ if(S.mgrOnly || (b.dataset.role === 'manager' && !S.canManage)) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
   else if(a === 'open'){ S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
   else if(a === 'new'){
@@ -1735,7 +1737,7 @@ window.addEventListener('popstate', e => {
     if(S.allSites && v.site && v.site !== S.site && S.db.sites.some(x => x.id === v.site)){ S.site = v.site; lsSet('site', v.site); deriveSite(); }
     S.panel = v.panel === 'hq' && !S.allSites ? null : v.panel;
     S.selectedId = v.sel && S.complaints.some(c => c.id === v.sel) ? v.sel : null;
-    if(v.role === 'staff' || (v.role === 'manager' && S.canManage)) { S.role = v.role; lsSet('role', S.role); }
+    if(!S.mgrOnly && (v.role === 'staff' || (v.role === 'manager' && S.canManage))) { S.role = v.role; lsSet('role', S.role); }
     const dlg = $('#popup');
     if(v.popup){ resetDetail(); openKpiPopup(v.popup); }
     else { if(dlg.open){ dlg.dataset.quiet = '1'; dlg.close(); } resetDetail(); }
