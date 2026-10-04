@@ -655,7 +655,7 @@ function render(){
   const waiting = S.complaints.filter(c => c.status === 'done').length;
   const al = $('#reply-alert');
   al.hidden = !(S.role === 'manager' && waiting > 0) || hqPanel;
-  al.innerHTML = `<span>직원 완료 보고가 올라왔습니다. 민원인에게 결과를 알려 주세요.</span><span>회신 대기 <b>${waiting}</b>건 →</span>`;
+  al.innerHTML = `<span>직원 완료 보고가 올라왔습니다. 민원인에게 결과를 알려 주세요.</span><span>회신 대기 <b>${waiting}</b>건</span>`;
 
   const warn = S.role !== 'manager' ? '' : (SERVER && !S.hq) ? '' : !SERVER ? '서버가 아직 설정되지 않아 이 기기에만 저장됩니다. README의 「서버 설정」 안내를 따라 주세요.'
     : S.oldSchema ? '서버 설정이 아직 예전 버전입니다. Supabase SQL Editor에서 supabase/schema.sql을 다시 실행해 주세요. 그 전까지는 사업장 구분과 본사 기능이 동작하지 않습니다.' : storageWarn();
