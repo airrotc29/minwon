@@ -381,8 +381,9 @@ const store = {
     S.db.users.sort((a, b) => a.email.localeCompare(b.email));
   },
   async removeUser(email){
-    await write(() => q(sb.rpc('remove_login', {p_email:email})));
+    const ok = await write(() => q(sb.rpc('remove_login', {p_email:email})));
     S.db.users = S.db.users.filter(x => x.email !== email);
+    if(ok === false) toast('역할은 해제했지만 로그인 계정은 지우지 못했습니다. Supabase → Authentication → Users 에서 직접 지워 주세요.');
   },
   resetPassword(email, pw){ return write(() => q(sb.rpc('set_login_password', {p_email:email, p_password:pw}))); },
   /* 본사가 앱에서 로그인 계정을 만든다. 내 로그인이 바뀌지 않도록 별도 클라이언트로 가입시킨다 */
@@ -1175,6 +1176,7 @@ function failMsg(e){
   if(e && e.code === 'signup_off') return 'Supabase → Authentication → Sign In / Providers 에서 "Allow new users to sign up"을 켜야 계정을 만들 수 있습니다.';
   if(e && e.code === 'auth') return '로그인이 풀렸습니다. 다시 로그인해 주세요.';
   if(e && e.code === 'network' || e instanceof TypeError) return '인터넷 연결을 확인하세요. 저장되지 않았습니다.';
+  if(e && /Could not find the function|schema cache/i.test(e.message || '')) return '서버 설정이 예전 버전입니다. Supabase SQL Editor에서 supabase/schema.sql(새 버전)을 다시 실행해 주세요.';
   if(e && e.code === 'server') return '서버에 저장하지 못했습니다: ' + e.message;
   return '저장하지 못했습니다. 잠시 후 다시 시도하세요.';
 }

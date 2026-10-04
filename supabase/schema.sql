@@ -154,13 +154,19 @@ begin
     where lower(email) = lower(p_email);
   if not found then raise exception 'not found'; end if;
 end $$;
+-- 역할 지정을 먼저 지우고(이후 로그인해도 아무것도 못 봄), 로그인 계정 삭제는 권한이 없으면 건너뛰고 false 를 돌려준다
 create or replace function public.remove_login(p_email text)
-returns void language plpgsql security definer set search_path = public as $$
+returns boolean language plpgsql security definer set search_path = public as $$
+declare ok boolean := true;
 begin
   if not is_hq() then raise exception 'forbidden'; end if;
   if lower(p_email) = lower(coalesce(auth.jwt() ->> 'email', '')) then raise exception 'self'; end if;
   delete from app_users where email = lower(p_email);
-  delete from auth.users where lower(email) = lower(p_email);
+  begin
+    delete from auth.users where lower(email) = lower(p_email);
+  exception when insufficient_privilege or undefined_table then ok := false;
+  end;
+  return ok;
 end $$;
 create or replace function public.is_hq()
 returns boolean language sql stable security definer set search_path = public as $$
