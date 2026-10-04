@@ -622,6 +622,7 @@ function renderDetail(){
   openDet.forEach(id => { const d = document.getElementById(id); if(d) d.open = true; });
   if(focusId){ const f = document.getElementById(focusId); if(f) f.focus(); }
   hydratePhotos(el);
+  if(S.panel === 'hq') drawHqCharts();
   if(S.panel === 'report' && el.querySelector('#report-preview')){
     // 다시 그려도 저장 안 한 의견이 미리보기에 남도록
     $('#report-preview').innerHTML = reportHTML(S.reportMonth, currentReportMeta());
@@ -929,6 +930,14 @@ function hqView(){
     <div class="${tot.overdue ? 'attn' : ''}"><b>${tot.overdue}</b><span>기한 초과</span></div>
   </div>
   <div class="sec">
+    <h3>사업장별 미결 현황 <span class="hint">(현재 기준)</span></h3>
+    <div class="chart" data-chart="open" aria-busy="true"></div>
+  </div>
+  <div class="charts2">
+    <div class="sec"><h3>최근 6개월 접수·처리 완료 <span class="hint">(${esc(monthLabel(ym))}까지)</span></h3><div class="chart" data-chart="trend"></div></div>
+    <div class="sec"><h3>${esc(monthLabel(ym))} 분류별 접수</h3><div class="chart" data-chart="cat"></div></div>
+  </div>
+  <div class="sec">
     <h3>사업장별 현황 <span class="hint">(사업장을 누르면 그 사업장 화면으로 들어갑니다)</span></h3>
     ${active.length ? `<div class="tscroll"><table class="rtable hq-table"><thead><tr><th>사업장</th><th>미결</th><th>지시 대기</th><th>회신 대기</th><th>기한 초과</th><th>긴급</th><th>이달 접수</th><th>이달 완료</th><th>직원</th><th>최근 변동</th></tr></thead><tbody>
       ${active.map(st => { const k = siteKpis(st.id); const w = (v, warn) => `<td class="n${warn && v ? ' warn' : ''}">${v}</td>`;
@@ -966,6 +975,136 @@ function hqView(){
     <p class="hint">이메일은 실제로 쓰지 않아도 되며(메일 발송 없음) 로그인 아이디로만 쓰입니다. 비밀번호를 잊으면 위 목록의 <b>비밀번호 재설정</b>으로 새로 정해 알려 주세요.</p>
   </div>`;
 }
+/* ---------- 본사 화면 그래프 (외부 라이브러리 없이 SVG 직접 생성) ---------- */
+const VIZ = ['var(--viz1)', 'var(--viz2)', 'var(--viz3)', 'var(--viz4)'];
+const OPEN_STAGES = [['received', '지시 대기'], ['assigned', '지시됨'], ['progress', '처리중'], ['done', '회신 대기']];
+const legendHTML = items => `<div class="viz-legend">${items.map(([label, i]) => `<span><i style="background:${VIZ[i]}"></i>${esc(label)}</span>`).join('')}</div>`;
+/* 글자 폭 어림(한글 12px, 영숫자 7px)으로 이름을 줄인다 */
+const cut = (s, max) => { let out = '', w = 0; for(const ch of String(s)){ w += ch.charCodeAt(0) > 255 ? 12 : 7; if(w > max) return out + '…'; out += ch; } return out; };
+/* 한쪽 끝만 둥근 막대(기준선 쪽은 각지게) */
+function barPath(x, y, w, h, side){
+  const r = Math.min(4, w / 2, h / 2);
+  if(side === 'right') return `M${x},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h - r}Q${x + w},${y + h} ${x + w - r},${y + h}H${x}Z`;
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+function niceStep(max){ const raw = Math.max(1, max) / 4, p = 10 ** Math.floor(Math.log10(raw)), n = raw / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
+const shortMonth = ym => `${Number(ym.slice(5))}월`;
+
+function hqChartData(ym){
+  const active = S.db.sites.filter(x => !x.archived), ids = new Set(active.map(x => x.id));
+  const all = S.db.complaints.filter(c => ids.has(siteOf(c)));
+  const open = active.map(st => {
+    const l = all.filter(c => siteOf(c) === st.id && c.status !== 'replied');
+    return {id:st.id, name:st.name, v:OPEN_STAGES.map(([k]) => l.filter(c => c.status === k).length), total:l.length};
+  }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'ko'));
+  const [y, m] = ym.split('-').map(Number);
+  const trend = Array.from({length:6}, (_, i) => { const d = new Date(y, m - 6 + i, 1); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}`; })
+    .map(k => { const r = reportData(k, all); return {ym:k, recv:r.recv.length, closed:r.closedInMonth.length}; });
+  const cat = reportData(ym, all).byCat.map(g => ({name:g.key, total:g.total}));
+  return {open, trend, cat};
+}
+/* 1. 사업장별 미결: 단계별 누적 가로 막대, 줄을 누르면 그 사업장으로 */
+function chartOpen(d, w){
+  const rows = d.open.filter(r => r.total);
+  if(!rows.length) return '<p class="hint">미결 민원이 없습니다. 모든 사업장이 회신까지 마쳤습니다.</p>';
+  const lw = Math.min(150, Math.round(w * 0.3)), bh = 22, gap = 10, right = 40, pw = w - lw - right;
+  const max = Math.max(1, ...rows.map(r => r.total)), h = rows.length * (bh + gap);
+  let defs = '', body = '';
+  rows.forEach((r, i) => {
+    const y = i * (bh + gap) + gap / 2, tw = Math.max(6, r.total / max * pw), id = `vz-clip-${i}`;
+    defs += `<clipPath id="${id}"><path d="${barPath(lw, y, tw, bh, 'right')}"/></clipPath>`;
+    let x = lw, segs = '';
+    r.v.forEach((v, k) => {
+      if(!v) return;
+      const sw = v / r.total * tw;
+      segs += `<rect x="${x.toFixed(1)}" y="${y}" width="${sw.toFixed(1)}" height="${bh}" fill="${VIZ[k]}" stroke="var(--surface)" stroke-width="2" data-tip="${esc(`${r.name} · ${OPEN_STAGES[k][1]} ${v}건`)}"/>`;
+      if(sw >= 24) segs += `<text x="${(x + sw / 2).toFixed(1)}" y="${y + bh / 2}" class="vz-in" text-anchor="middle" dominant-baseline="central">${v}</text>`;
+      x += sw;
+    });
+    body += `<g class="vz-row" data-act="hq-enter" data-site="${esc(r.id)}" tabindex="0" role="link" aria-label="${esc(r.name)} 미결 ${r.total}건, 누르면 사업장 화면으로 이동">
+      <rect x="0" y="${y - gap / 2}" width="${w}" height="${bh + gap}" fill="transparent"/>
+      <text x="${lw - 8}" y="${y + bh / 2}" class="vz-lab" text-anchor="end" dominant-baseline="central">${esc(cut(r.name, lw - 12))}</text>
+      <g clip-path="url(#${id})">${segs}</g>
+      <text x="${(lw + tw + 6).toFixed(1)}" y="${y + bh / 2}" class="vz-val" dominant-baseline="central">${r.total}</text></g>`;
+  });
+  return legendHTML(OPEN_STAGES.map(([, l], i) => [l, i])) +
+    `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="사업장별 미결 민원 단계별 누적 막대 그래프"><defs>${defs}</defs>${body}</svg>
+    <p class="hint">막대 길이는 미결 건수, 색은 처리 단계입니다. 사업장 줄을 누르면 그 사업장 화면으로 들어갑니다.</p>`;
+}
+/* 2. 최근 6개월 접수·처리 완료: 월별 두 막대 */
+function chartTrend(d, w){
+  const t = d.trend, h = 220, top = 22, bottom = 24, left = 34, right = 8;
+  const max = Math.max(1, ...t.map(r => Math.max(r.recv, r.closed)));
+  const step = niceStep(max), ymax = Math.ceil(max / step) * step;
+  const pw = w - left - right, ph = h - top - bottom, gw = pw / t.length, bw = Math.min(30, Math.max(8, (gw - 14) / 2 - 2));
+  const Y = v => top + ph - v / ymax * ph;
+  let grid = '';
+  for(let v = 0; v <= ymax; v += step) grid += `<line x1="${left}" x2="${w - right}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="vz-grid${v ? '' : ' base'}"/><text x="${left - 6}" y="${Y(v).toFixed(1)}" class="vz-ax" text-anchor="end" dominant-baseline="central">${v}</text>`;
+  const peak = [Math.max(...t.map(r => r.recv)), Math.max(...t.map(r => r.closed))];
+  const SER = [['recv', '접수'], ['closed', '처리 완료']];
+  let bars = '';
+  t.forEach((r, i) => {
+    const cx = left + gw * i + gw / 2, last = i === t.length - 1;
+    let g = `<rect x="${(left + gw * i).toFixed(1)}" y="${top - 10}" width="${gw.toFixed(1)}" height="${ph + 10}" fill="transparent"/>`;
+    SER.forEach(([k, name], s) => {
+      const v = r[k], x = cx + (s ? 2 : -bw - 2), bh = v ? Math.max(3, v / ymax * ph) : 0;
+      if(bh) g += `<path d="${barPath(x.toFixed(1) * 1, (Y(0) - bh).toFixed(1) * 1, bw, bh.toFixed(1) * 1, 'top')}" fill="${VIZ[s]}"/>`;
+      // 값 표시는 마지막 달과 각 계열의 최고치만(그래프를 숫자로 뒤덮지 않도록)
+      if(v && (last || (v === peak[s] && v > 0))) g += `<text x="${(x + bw / 2).toFixed(1)}" y="${(Y(0) - bh - 4).toFixed(1)}" class="vz-val" text-anchor="middle">${v}</text>`;
+    });
+    g += `<text x="${cx.toFixed(1)}" y="${h - 6}" class="vz-ax" text-anchor="middle">${shortMonth(r.ym)}</text>`;
+    bars += `<g data-tip="${esc(`${monthLabel(r.ym)} · 접수 ${r.recv}건 · 처리 완료 ${r.closed}건`)}">${g}</g>`;
+  });
+  return legendHTML(SER.map(([, l], i) => [l, i])) +
+    `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="최근 6개월 월별 접수와 처리 완료 건수 막대 그래프">${grid}${bars}</svg>
+    <details class="viz-table"><summary>표로 보기</summary><table class="rtable"><thead><tr><th>월</th>${t.map(r => `<th class="n">${shortMonth(r.ym)}</th>`).join('')}</tr></thead><tbody>
+      ${SER.map(([k, name]) => `<tr><td>${name}</td>${t.map(r => `<td class="n">${r[k]}</td>`).join('')}</tr>`).join('')}</tbody></table></details>`;
+}
+/* 3. 선택한 달의 분류별 접수: 한 계열 가로 막대 */
+function chartCat(d, w, ym){
+  const rows = d.cat;
+  if(!rows.length) return `<p class="hint">${esc(monthLabel(ym))}에 접수된 민원이 없습니다.</p>`;
+  const lw = Math.min(110, Math.round(w * 0.3)), bh = 18, gap = 8, right = 40, pw = w - lw - right;
+  const max = Math.max(1, ...rows.map(r => r.total)), h = rows.length * (bh + gap), sum = rows.reduce((a, r) => a + r.total, 0);
+  const body = rows.map((r, i) => {
+    const y = i * (bh + gap) + gap / 2, bwid = Math.max(4, r.total / max * pw);
+    return `<g data-tip="${esc(`${r.name} ${r.total}건 (${pct(r.total, sum)}%)`)}"><rect x="0" y="${y - gap / 2}" width="${w}" height="${bh + gap}" fill="transparent"/>
+      <text x="${lw - 8}" y="${y + bh / 2}" class="vz-lab" text-anchor="end" dominant-baseline="central">${esc(cut(r.name, lw - 12))}</text>
+      <path d="${barPath(lw, y, bwid, bh, 'right')}" fill="${VIZ[0]}"/>
+      <text x="${(lw + bwid + 6).toFixed(1)}" y="${y + bh / 2}" class="vz-val" dominant-baseline="central">${r.total}</text></g>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(monthLabel(ym))} 분류별 접수 건수 막대 그래프">${body}</svg>
+    <details class="viz-table"><summary>표로 보기</summary><table class="rtable"><thead><tr><th>분류</th><th class="n">건수</th><th class="n">비율</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${esc(r.name)}</td><td class="n">${r.total}</td><td class="n">${fmtPct(pct(r.total, sum))}</td></tr>`).join('')}</tbody></table></details>`;
+}
+function drawHqCharts(){
+  const boxes = document.querySelectorAll('#detail .chart');
+  if(!boxes.length) return;
+  const d = hqChartData(S.hqMonth);
+  boxes.forEach(el => {
+    if(!el.clientWidth) return;
+    const w = Math.max(240, Math.floor(el.clientWidth)), kind = el.dataset.chart;
+    el.innerHTML = kind === 'open' ? chartOpen(d, w) : kind === 'trend' ? chartTrend(d, w) : chartCat(d, w, S.hqMonth);
+  });
+}
+let resizeT;
+window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if(S.panel === 'hq') drawHqCharts(); }, 150); });
+/* 그래프 위에 손가락·마우스를 대면 값 풍선 */
+const tipEl = document.createElement('div'); tipEl.id = 'tip'; tipEl.hidden = true; document.body.appendChild(tipEl);
+function moveTip(e){
+  const t = e.target.closest ? e.target.closest('[data-tip]') : null;
+  if(!t){ tipEl.hidden = true; return; }
+  tipEl.textContent = t.getAttribute('data-tip'); tipEl.hidden = false;
+  const r = tipEl.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY - r.height - 12;
+  if(x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if(y < 8) y = e.clientY + 16;
+  tipEl.style.left = Math.max(8, x) + 'px'; tipEl.style.top = y + 'px';
+}
+document.addEventListener('pointermove', moveTip);
+document.addEventListener('pointerdown', moveTip);
+document.addEventListener('scroll', () => { tipEl.hidden = true; }, true);
+
 function printHqReport(){
   $('#print-area').innerHTML = hqReportHTML(S.hqMonth);
   window.print();

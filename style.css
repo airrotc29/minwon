@@ -5,6 +5,8 @@
   --accent:#1E3A7B; --accent-ink:#FFFFFF; --accent-soft:#DDE5F4;
   --st-received:#5A6478; --st-assigned:#A86400; --st-progress:#0E7C86; --st-done:#2B7A4B; --st-replied:#7A8193;
   --urgent:#BF3428; --urgent-soft:#FBE4E1;
+  /* 그래프 계열 색(색약 구분 검증 완료, 순서 고정) */
+  --viz1:#2a78d6; --viz2:#eb6834; --viz3:#1baf7a; --viz4:#eda100;
   --font:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
   --r:8px;
@@ -13,6 +15,7 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0F1420; --surface:#171E2E; --sunk:#1F2839; --ink:#E4E9F3; --muted:#9AA5BC; --line:#2C3649;
   --accent:#8FB0EE; --accent-ink:#0D1424; --accent-soft:#1E2C4D;
+  --viz1:#3987e5; --viz2:#d95926; --viz3:#199e70; --viz4:#c98500;
   --st-received:#A3ADC2; --st-assigned:#E5A64A; --st-progress:#5CC6CF; --st-done:#6CC392; --st-replied:#8E96A8;
   --urgent:#F07B6F; --urgent-soft:#3A1F1C; color-scheme:dark;
 }}
@@ -282,6 +285,28 @@ body.no-access .tools,body.no-access .summary,body.no-access .work,body.no-acces
 .site-row{display:flex;gap:6px;align-items:center;width:100%}
 .site-row input{flex:1;min-width:0}
 @media (max-width:820px){.hq-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* 본사 그래프 */
+.charts2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:820px){.charts2{grid-template-columns:minmax(0,1fr)}}
+.chart{min-height:40px}
+.chart svg{display:block;max-width:100%;height:auto;font-family:var(--font)}
+.chart .vz-lab{font-size:12px;fill:var(--ink)}
+.chart .vz-val{font-size:12px;font-weight:600;fill:var(--ink);font-variant-numeric:tabular-nums}
+.chart .vz-in{font-size:11px;font-weight:600;fill:#fff;pointer-events:none}
+.chart .vz-ax{font-size:11px;fill:var(--muted);font-variant-numeric:tabular-nums}
+.chart .vz-grid{stroke:var(--line);stroke-width:1}
+.chart .vz-grid.base{stroke:var(--muted)}
+.chart .vz-row{cursor:pointer}
+.chart .vz-row:hover .vz-lab,.chart .vz-row:focus-visible .vz-lab{fill:var(--accent);font-weight:600;text-decoration:underline}
+.chart .vz-row:focus-visible{outline:none}
+.chart .vz-row:focus-visible > rect:first-child{fill:var(--accent-soft)}
+.chart g[data-tip]:hover > rect:first-child{fill:var(--accent-soft);opacity:.6}
+.viz-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.viz-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.viz-table{margin-top:6px;font-size:13px}
+.viz-table summary{cursor:pointer;color:var(--muted)}
+.viz-table table{margin-top:6px}
+#tip{position:fixed;z-index:60;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12.5px;padding:6px 10px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap;max-width:min(320px,90vw);white-space:normal}
 .report-preview .rtable td:first-child,.hq-table td:first-child{white-space:nowrap}
 
 /* 직원 접속 링크 */
