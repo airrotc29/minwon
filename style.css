@@ -620,3 +620,7 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
   .sbox{flex:1}
   .summary .search{max-width:280px;margin-top:22px}
 }
+
+/* 지시해 주세요·회신해 주세요 목록: 열어 볼 때까지 깜빡 */
+.row.blink{animation:row-blink 1s ease-in-out infinite}
+@keyframes row-blink{0%,100%{background:transparent;box-shadow:inset 5px 0 0 #E0B400}50%{background:rgba(255,215,40,.38);box-shadow:inset 5px 0 0 #D01E12}}

@@ -522,6 +522,12 @@ function fixFilter(){
   if(S.role === 'staff'){ if(!STAFF_F.includes(S.filter)) S.filter = 'todo'; }
   else if(STAFF_F.includes(S.filter) && S.filter !== 'replied') S.filter = 'open';
 }
+/* 소장이 '지시해 주세요'·'회신해 주세요' 카드를 눌렀을 때, 아직 열어 보지 않은 민원은 누를 때까지 깜빡인다.
+   (민원 id + 상태로 기억하므로, 다음 단계로 넘어가 다시 할 일이 되면 또 깜빡인다) */
+const seenKey = c => `${c.id}:${c.status}`;
+let seenTap = new Set(); try{ seenTap = new Set(JSON.parse(lsGet('seenTap') || '[]')); }catch(e){}
+function markSeen(c){ if(!c) return; seenTap.add(seenKey(c)); try{ lsSet('seenTap', JSON.stringify([...seenTap].slice(-500))); }catch(e){} }
+const needsTap = c => S.role === 'manager' && (S.filter === 'received' || S.filter === 'done') && c.status === S.filter && !seenTap.has(seenKey(c));
 function filtered(){
   fixFilter();
   let b = base().filter(c => matchFilter(c, S.filter));
@@ -728,7 +734,7 @@ function renderList(){
     return;
   }
   el.innerHTML = head + list.map(c => `
-    <button type="button" class="row" data-act="open" data-id="${esc(c.id)}" aria-current="${S.selectedId === c.id && !S.panel}">
+    <button type="button" class="row${needsTap(c) ? ' blink' : ''}" data-act="open" data-id="${esc(c.id)}" aria-current="${S.selectedId === c.id && !S.panel}">
       <span class="l1"><span class="no">#${nums[c.id]}</span><span>${esc(c.category)}</span><span>${esc(c.location)}</span>${receiver(c) ? `<span>· ${esc(receiver(c))} 접수</span>` : ''}</span>
       <span class="t">${esc(c.title)}</span>
       <span class="l3"><span class="pill s-${c.status}">${ST[c.status].label}</span>
@@ -1798,7 +1804,7 @@ document.addEventListener('click', e => {
   else if(a === 'link-copy'){ copyText(staffLink()); }
   else if(a === 'role'){ if(S.mgrOnly || (b.dataset.role === 'manager' && !S.canManage)) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = S.role === 'staff' ? 'todo' : 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
-  else if(a === 'open'){ S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
+  else if(a === 'open'){ markSeen(find(b.dataset.id)); S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
   else if(a === 'new'){
     if(S.role === 'staff' && !S.me){ toast('먼저 오른쪽 위에서 내 이름을 선택하세요'); $('#me-select').focus(); return; }
     S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
