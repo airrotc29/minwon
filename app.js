@@ -622,7 +622,6 @@ function renderDetail(){
   openDet.forEach(id => { const d = document.getElementById(id); if(d) d.open = true; });
   if(focusId){ const f = document.getElementById(focusId); if(f) f.focus(); }
   hydratePhotos(el);
-  if(S.panel === 'settings') drawQR();
   if(S.panel === 'report' && el.querySelector('#report-preview')){
     // 다시 그려도 저장 안 한 의견이 미리보기에 남도록
     $('#report-preview').innerHTML = reportHTML(S.reportMonth, currentReportMeta());
@@ -994,29 +993,16 @@ function staffLinkSection(){
   const link = staffLink();
   return `<div class="sec act">
     <h3>직원 접속 링크</h3>
-    <p class="hint">직원은 아이디·비밀번호 없이 이 링크(또는 QR)를 휴대폰에서 <b>처음 한 번만</b> 열면 <b>${esc(siteName())}</b> 직원 화면이 열립니다. 열린 화면에서 <b>바탕화면에 아이콘 만들기</b> 안내를 따라 두면, 다음부터는 링크나 QR 없이 아이콘만 눌러 들어옵니다. 직원이 바뀌면 <b>링크 새로 만들기</b>를 누르세요. 예전 링크로 들어온 휴대폰·아이콘은 그 즉시 막힙니다.</p>
-    ${link ? `<div class="linkbox">
-        <canvas id="staff-qr" width="180" height="180" aria-label="직원 접속 QR"></canvas>
-        <div class="linkside">
-          <code class="linktext" id="staff-link">${esc(link)}</code>
-          <div class="btns"><button type="button" class="btn" data-act="link-copy">링크 복사</button><button type="button" class="btn kakao" data-act="link-share">카톡으로 보내기</button></div>
-          <p class="hint">직원 휴대폰 카메라로 QR을 찍거나, 카톡으로 보낸 링크를 누르면 됩니다. PC에서 쓰려면 같은 링크를 PC 브라우저에서 열고 즐겨찾기(Ctrl+D)에 넣어 두면 됩니다.</p>
-        </div>
-      </div>
-      <div class="btns"><button type="button" class="btn danger" data-act="link-rotate">링크 새로 만들기 (예전 링크 무효)</button></div>`
+    <p class="hint">직원에게 아래 링크를 카톡으로 보내 주세요. 직원은 링크를 한 번 열면 <b>${esc(siteName())}</b> 직원 화면이 열리고, 화면 아래 <b>바탕화면에 추가</b>를 누르면 다음부터 아이콘으로 들어옵니다. 직원이 바뀌면 <b>링크 새로 만들기</b>를 누르세요. 예전 링크는 바로 막힙니다.</p>
+    ${link ? `<code class="linktext" id="staff-link">${esc(link)}</code>
+      <div class="btns">
+        <button type="button" class="btn kakao" data-act="link-share">카톡으로 보내기</button>
+        <button type="button" class="btn" data-act="link-copy">링크 복사</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn danger" data-act="link-rotate">링크 새로 만들기</button>
+      </div>`
     : `<div class="btns"><button type="button" class="btn primary" data-act="link-rotate">직원 접속 링크 만들기</button></div>`}
   </div>`;
-}
-let qrLib = null;
-function loadQR(){
-  if(window.QRCode) return Promise.resolve(window.QRCode);
-  if(qrLib) return qrLib;
-  qrLib = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js'; sc.onload = () => res(window.QRCode); sc.onerror = () => { qrLib = null; rej(new Error('qr')); }; document.head.appendChild(sc); });
-  return qrLib;
-}
-function drawQR(){
-  const cv = document.getElementById('staff-qr'); if(!cv) return;
-  loadQR().then(QR => QR.toCanvas(cv, staffLink(), {width:180, margin:1, color:{dark:'#141B2D'}})).catch(() => { cv.replaceWith(Object.assign(document.createElement('p'), {className:'hint', textContent:'QR을 불러오지 못했습니다. 링크를 복사해 보내 주세요.'})); });
 }
 
 function serverSection(){
