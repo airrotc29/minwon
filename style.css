@@ -99,8 +99,9 @@ textarea{resize:vertical;min-height:84px;line-height:1.55}
 .tag{display:inline-block;font-size:12px;font-weight:600;padding:0 7px;line-height:20px;border-radius:4px;background:var(--urgent-soft);color:var(--urgent);white-space:nowrap}
 .tag.soft{background:var(--sunk);color:var(--muted)}
 
-.empty{padding:28px 20px;color:var(--muted);display:flex;flex-direction:column;gap:12px}
-.empty strong{color:var(--ink);font-size:16px}
+.empty{padding:28px 20px;color:var(--muted);line-height:1.6}
+.empty strong{display:block;color:var(--ink);font-size:16px;margin-bottom:8px}
+.empty .flow,.empty .btns{margin-top:12px}
 .flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:0;padding:0;list-style:none;counter-reset:f}
 .flow li{counter-increment:f;background:var(--sunk);border-radius:6px;padding:10px 12px;font-size:13.5px}
 .flow li::before{content:counter(f) "단계";display:block;font-size:11.5px;font-weight:600;color:var(--accent);letter-spacing:.04em}
