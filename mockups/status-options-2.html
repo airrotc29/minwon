@@ -1,0 +1,63 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--accent:#1E3A7B;--ink:#141B2D;--muted:#556079;--line:#D3D9E5;--bg:#EEF1F6;--y:#FFE15A;--yb:#E0B400;--red:#D01E12}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"IBM Plex Sans KR","Noto Sans KR",sans-serif;color:var(--ink)}
+.opt{width:390px;padding:16px 14px 18px;background:var(--bg)}
+.tag{display:inline-block;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border-radius:999px;padding:3px 11px;margin-bottom:6px}
+h2{margin:2px 0 12px;font-size:17px}.sub{font-size:12.5px;color:var(--muted);margin:-6px 0 12px}
+.pill{display:inline-flex;align-items:center;gap:4px;border:1px solid currentColor;border-radius:999px;padding:0 7px;font-size:11px;font-weight:600;line-height:18px}
+/* 4 탭형 */
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px}
+.tab{border-radius:9px;padding:9px 4px;text-align:center}.tab b{display:block;font-size:22px;line-height:1.1}.tab span{font-size:12.5px}
+.tab.on{background:var(--y);box-shadow:inset 0 0 0 1.5px var(--yb)}.tab.on b{color:var(--red)}
+.subf{display:flex;gap:6px;margin:10px 0 8px}.sf{background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px}.sf.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:6px;font-size:13px}.card b{font-size:14px;display:block;margin:2px 0}
+.card .m{color:var(--muted);font-size:12px}
+/* 5 칸반형 */
+.board{display:flex;gap:8px;overflow:hidden}
+.col{flex:0 0 150px;background:#E3E8F1;border-radius:12px;padding:8px}
+.col h4{margin:0 0 6px;font-size:13px;display:flex;justify-content:space-between}.col h4 b{font-size:15px}
+.col.me{background:#FFF3B0;box-shadow:inset 0 0 0 1.5px var(--yb)}.col.me h4 b{color:var(--red)}
+.mini{background:#fff;border-radius:8px;padding:7px 9px;margin-bottom:5px;font-size:12px}.mini b{display:block;font-size:12.5px}.mini span{color:var(--muted);font-size:11px}
+.more{font-size:11.5px;color:var(--muted);text-align:center}
+.dots{display:flex;justify-content:center;gap:5px;margin-top:8px}.dots i{width:6px;height:6px;border-radius:50%;background:#C3CADA}.dots i.on{background:var(--accent);width:16px;border-radius:3px}
+/* 6 묶음 목록형 */
+.grp{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden}
+.gh{display:flex;align-items:center;gap:8px;padding:10px 12px;font-weight:700;font-size:14px}
+.gh .n{margin-left:auto;font-size:18px}.gh .ar{color:var(--muted);font-weight:400}
+.grp.me .gh{background:var(--y)}.grp.me .n{color:var(--red)}
+.it{border-top:1px solid var(--line);padding:8px 12px;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+.it .m{color:var(--muted);font-size:11.5px}
+</style></head><body>
+
+<section class="opt" id="d">
+  <span class="tag">대안 4</span><h2>3단 탭형</h2><p class="sub">단계 7칸 대신 큰 탭 3개만. 세부 단계는 탭 안에서 고름.</p>
+  <div class="tabs">
+    <div class="tab on"><b>2</b><span>내 할 일</span></div>
+    <div class="tab"><b>5</b><span>직원 처리 중</span></div>
+    <div class="tab"><b>5</b><span>완료</span></div>
+  </div>
+  <div class="subf"><span class="sf on">전부 2</span><span class="sf">지시할 것 1</span><span class="sf">회신할 것 1</span></div>
+  <div class="card"><span class="pill" style="color:#5A6478">● 지시 대기</span><b>복도가 미끄러워요</b><span class="m">113동 1566호 · 10.04 11:43</span></div>
+  <div class="card"><span class="pill" style="color:#2B7A4B">● 회신 대기</span><b>화장실 더러워요</b><span class="m">105동 659호 · 이대리 완료 보고</span></div>
+</section>
+
+<section class="opt" id="e">
+  <span class="tag">대안 5</span><h2>칸반 보드형</h2><p class="sub">단계별 칸을 옆으로 넘겨 봄. 숫자와 민원 제목이 함께 보임.</p>
+  <div class="board">
+    <div class="col me"><h4>지시 대기 <b>1</b></h4><div class="mini"><b>복도가 미끄러워요</b><span>113동 1566호</span></div></div>
+    <div class="col"><h4>지시됨 <b>2</b></h4><div class="mini"><b>변기막힘</b><span>정희도</span></div><div class="mini"><b>바퀴벌레 출몰</b><span>이대리</span></div></div>
+    <div class="col"><h4>처리중 <b>3</b></h4><div class="mini"><b>실외기 소음</b><span>박주임</span></div><div class="mini"><b>누수</b><span>김과장</span></div><div class="more">+1건</div></div>
+  </div>
+  <div class="dots"><i class="on"></i><i></i><i></i></div>
+</section>
+
+<section class="opt" id="f">
+  <span class="tag">대안 6</span><h2>묶음 목록형</h2><p class="sub">칸 없이 목록 자체를 ‘할 일 / 진행 중 / 완료’로 묶음. 눌러서 펼침.</p>
+  <div class="grp me"><div class="gh">지금 할 일 <span class="n">2</span></div>
+    <div class="it"><span>복도가 미끄러워요 <span class="m">· 지시할 것</span></span><span class="m">113동</span></div>
+    <div class="it"><span>화장실 더러워요 <span class="m">· 회신할 것</span></span><span class="m">105동</span></div></div>
+  <div class="grp"><div class="gh">직원 처리 중 <span class="n">5</span><span class="ar">▾</span></div></div>
+  <div class="grp"><div class="gh">완료 <span class="n">5</span><span class="ar">▸</span></div></div>
+</section>
+</body></html>
