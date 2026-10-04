@@ -584,6 +584,8 @@ const UA = navigator.userAgent;
 const inKakao = /KAKAOTALK/i.test(UA);
 const inAppBrowser = inKakao || /NAVER\(inapp|Instagram|FBAN|FBAV|Line\//i.test(UA);
 const isIOS = /iPhone|iPad|iPod/.test(UA);
+/* 전화·문자 앱 열기: 링크를 눌러 여는 방식이라 지금 화면(입력 중인 회신 문구)이 사라지지 않는다 */
+function openScheme(url){ const a = document.createElement('a'); a.href = url; a.style.display = 'none'; document.body.appendChild(a); a.click(); a.remove(); }
 /* 설치 시 열릴 주소(start_url)에 직원 링크 토큰을 담기 위해 매니페스트를 그때그때 만든다 */
 function setManifest(){
   if(location.protocol !== 'https:') return;
@@ -1526,7 +1528,8 @@ function managerActions(c){
     html += `<${final ? 'div class="act callout k-done"' : 'details class="more" id="dt-notice"'}>
       ${final ? '<h3>민원인에게 처리 결과 회신</h3>' : '<summary>민원인에게 중간 안내</summary>'}
       <form id="f-reply" class="sec" data-final="${final}">
-        <p class="hint">문구를 고친 뒤 <b>카톡으로 보내기</b>(휴대폰)나 <b>문구 복사</b>로 보내고, 보낸 뒤 아래 버튼으로 기록하세요.</p>
+        <p class="hint">문구를 고친 뒤 ${c.phone ? '<b>문자로 보내기</b>·' : ''}<b>카톡으로 보내기</b>·<b>문구 복사</b>로 보내고, 보낸 뒤 아래 버튼으로 기록하세요.</p>
+        ${c.phone ? `<div class="reply-phone"><span>민원인 <b>${esc(c.phone)}</b></span><span class="btns"><button type="button" class="btn sm" data-act="reply-call">📞 전화하기</button><button type="button" class="btn sm primary" data-act="reply-sms">💬 문자로 보내기</button></span></div>` : ''}
         <textarea id="rp-text" rows="9">${esc(replyTemplate(c))}</textarea>
         ${shareRefs(c).length ? `<label class="check"><input type="checkbox" id="rp-photos" checked> ${final ? '완료' : '진행'} 사진 ${shareRefs(c).length}장도 함께 보내기 <small>(문구와 사진을 한 장의 안내 이미지로 만들어 한 번에 보냅니다)</small></label>${thumbsHTML(shareRefs(c))}` : ''}
         <div class="btns">
@@ -1757,6 +1760,17 @@ document.addEventListener('click', e => {
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
   else if(a === 'hq'){ if(!S.allSites) return; goHq(); }
+  else if(a === 'reply-call' || a === 'reply-sms'){
+    const c = find(S.selectedId); if(!c || !c.phone) return;
+    const num = c.phone.replace(/[^\d+]/g, ''), m = document.getElementById('rp-method');
+    if(a === 'reply-call'){ if(m) m.value = '전화'; openScheme(`tel:${num}`); toast('통화가 끝나면 아래 기록 버튼을 누르세요.'); }
+    else {
+      const text = val('rp-text'); if(m) m.value = '문자';
+      if(navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+      openScheme(`sms:${num}${isIOS ? '&' : '?'}body=${encodeURIComponent(text)}`);
+      toast('문자 앱에 회신 문구를 넣었습니다. 보낸 뒤 아래 기록 버튼을 누르세요. (사진은 문자 앱에서 직접 붙여 주세요)');
+    }
+  }
   else if(a === 'exit-cancel'){ hideExitAsk(); syncHistory(); }
   else if(a === 'exit-app'){
     hideExitAsk();
