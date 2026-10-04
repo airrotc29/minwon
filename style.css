@@ -533,3 +533,10 @@ mark.hl b{color:#141B2D}
 @keyframes spark-glow{0%,100%{background-color:#FFE15A;box-shadow:0 0 0 0 rgba(255,200,0,.0)}50%{background-color:#FFEE8A;box-shadow:0 0 12px 3px rgba(255,200,0,.65)}}
 @keyframes spark-shine{0%{left:-60%}55%,100%{left:130%}}
 @media (prefers-reduced-motion:reduce){.chip.spark,.chip.spark::after{animation:none}}
+
+/* 지시 대기 숫자: 빨강으로 계속 깜빡 */
+.chip.wait b{color:#D01E12}
+.chip.wait.zero b{color:#7A8193}
+.chip.wait.spark b,.chip.wait.spark[aria-pressed="true"] b{color:#D01E12;font-weight:800;animation:num-blink 1s steps(1,end) infinite}
+@keyframes num-blink{0%,55%{opacity:1}56%,100%{opacity:.12}}
+@media (prefers-reduced-motion:reduce){.chip.wait.spark b{animation:none}}
