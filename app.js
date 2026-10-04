@@ -442,8 +442,7 @@ function renderBrand(){
   // 관리소장·직원 화면: 회사명 대신 '사무소 이름 + 관리단'. 본사·임원은 회사명 그대로
   const signedIn = !SERVER || !!S.user;
   let office = signedIn && !S.allSites && bn ? (/관리단$/.test(bn.trim()) ? bn.trim() : `${bn.trim()} 관리단`) : '';
-  if(SERVER && S.user){ if(S.allSites) lsSet('office', ''); else if(office) lsSet('office', office); }        // 이 기기가 어느 사무소 것인지 기억 → 로그인 화면에도 사용
-  const shown = office || (SERVER && !S.user ? lsGet('office') || '' : '');
+  const shown = office;                    // 로그인 화면(로그인 전)은 항상 선민종합관리(주)
   $('#co-name').textContent = shown || s.company || COMPANY;
   $('#foot-name').textContent = shown || '선민종합관리(주)';
   $('#bc-name').textContent = shown || '선민종합관리(주)';
