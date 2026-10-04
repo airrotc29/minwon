@@ -256,6 +256,93 @@ function renderBell(){
   b.classList.toggle('off', !on);
   b.setAttribute('aria-pressed', on);
 }
+/* ---------- 앱이 꺼져 있어도 울리는 알림(웹 푸시) ----------
+   관리소장·직원 휴대폰을 서버(push_subs)에 등록해 두면, 새 민원·지시·완료 보고 때 서버(send-push 함수)가 알림을 보낸다.
+   서버 준비(schema.sql 재실행 + send-push 함수 배포)가 안 되어 있으면 안내띠를 띄우지 않는다. */
+let pushState = '', pushKey = null, pushSaved = '';
+const pushRole = () => SERVER && S.user && !S.allSites && S.access && (S.access.role === 'manager' || S.access.role === 'staff');
+const pushOK = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+function b64u(s){ const r = atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(r, ch => ch.charCodeAt(0)); }
+async function vapidKey(){
+  if(pushKey) return pushKey;
+  try{
+    const {data} = await sb.from('push_config').select('vapid_public, function_url').eq('id', 1).maybeSingle();
+    if(data && data.vapid_public) return pushKey = data.vapid_public;
+    if(data && data.function_url){ const r = await fetch(data.function_url); if(r.ok){ const j = await r.json(); if(j.publicKey) return pushKey = j.publicKey; } }
+  }catch(e){}
+  return null;
+}
+async function swReg(){
+  await navigator.serviceWorker.register('sw.js');
+  return Promise.race([navigator.serviceWorker.ready, new Promise((_, no) => setTimeout(() => no(new Error('sw')), 10000))]);
+}
+async function savePush(sub){
+  const key = sub.endpoint + '|' + (S.me || '');
+  if(pushSaved === key) return;
+  await q(sb.rpc('save_push_sub', {p_sub:sub.toJSON(), p_staff:S.me || null}));
+  pushSaved = key;
+}
+async function setupPush(){
+  pushState = '';
+  try{
+    if(!pushRole()) return;
+    if(inAppBrowser){ pushState = 'inapp'; return; }
+    if(!pushOK()){ if(isIOS && !standalone()) pushState = 'ios'; return; }
+    if(!(await vapidKey())) return;                      // 서버 준비 전
+    if(Notification.permission === 'denied'){ pushState = 'denied'; return; }
+    const reg = await swReg(), sub = await reg.pushManager.getSubscription();
+    if(sub && Notification.permission === 'granted'){ await savePush(sub); pushState = 'on'; }
+    else pushState = 'ask';
+  }catch(e){ console.warn('push', e); }
+  finally{ renderPush(); }
+}
+async function enablePush(){
+  try{
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted'){ pushState = perm === 'denied' ? 'denied' : 'ask'; renderPush(); toast('알림이 허용되지 않았습니다'); return; }
+    const key = await vapidKey(); if(!key){ toast('서버 알림 설정이 아직 안 되어 있습니다. 본사에 문의하세요.'); return; }
+    const reg = await swReg();
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub) sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64u(key)});
+    await savePush(sub);
+    pushState = 'on'; renderPush();
+    toast('알림을 켰습니다. 앱을 꺼 두어도 새 민원·지시가 오면 울립니다.');
+  }catch(e){ console.error(e); toast('알림을 켜지 못했습니다. 잠시 뒤 다시 눌러 주세요.'); }
+}
+/* 로그아웃: 이 기기로는 더 이상 알림을 보내지 않는다 */
+async function dropPush(){
+  try{
+    if(!pushOK()) return;
+    const reg = await navigator.serviceWorker.getRegistration(); if(!reg) return;
+    const sub = await reg.pushManager.getSubscription(); if(!sub) return;
+    await sb.rpc('remove_push_sub', {p_endpoint:sub.endpoint});
+    await sub.unsubscribe();
+  }catch(e){}
+  pushSaved = ''; pushState = '';
+}
+function renderPush(){
+  const el = $('#pushask'); if(!el) return;
+  const later = +(lsGet('pushLater') || 0);
+  const show = pushRole() && ['ask', 'inapp', 'ios', 'denied'].includes(pushState) && Date.now() > later;
+  el.hidden = !show;
+  if(!show) return;
+  let msg, btn = '';
+  if(pushState === 'ask'){ msg = '<b>📲 앱을 꺼 두어도 알림 받기</b><span class="hint">새 민원·업무 지시·완료 보고가 오면 휴대폰이 울립니다.</span>'; btn = '<button type="button" class="btn primary" data-act="push-on">알림 켜기</button>'; }
+  else if(pushState === 'inapp'){ msg = '<b>📲 앱이 꺼져 있어도 알림을 받으려면</b><span class="hint">카톡 안 화면에서는 알림을 켤 수 없습니다. 크롬(기본 브라우저)이나 바탕화면 아이콘으로 열어 주세요.</span>'; if(inKakao) btn = '<button type="button" class="btn primary" data-act="open-browser">크롬에서 열기</button>'; }
+  else if(pushState === 'ios'){ msg = '<b>📲 아이폰에서 알림을 받으려면</b><span class="hint">사파리 공유 버튼(⬆) → <b>홈 화면에 추가</b> 후, 바탕화면 아이콘으로 열어 <b>알림 켜기</b>를 눌러 주세요. (iOS 16.4 이상)</span>'; }
+  else { msg = '<b>🔕 이 휴대폰은 알림이 차단되어 있습니다</b><span class="hint">주소창 왼쪽 자물쇠(또는 휴대폰 설정 → 앱 → 크롬) → <b>알림 허용</b>으로 바꾼 뒤 새로 고쳐 주세요.</span>'; }
+  el.innerHTML = `<div>${msg}</div><div class="btns">${btn}<button type="button" class="btn sm" data-act="push-later">나중에</button></div>`;
+}
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message', e => { if(e.data && e.data.open) openFromPush(e.data.open); });
+}
+function openFromPush(id){
+  const c = S.db.complaints.find(x => x.id === id);
+  if(!c) return;
+  if(S.allSites && siteOf(c) !== S.site) return enterSite(siteOf(c), false, id);
+  S.selectedId = id; S.panel = null; S.filter = 'all'; render();
+}
+
 let channel = null;
 function subscribe(){
   if(channel) sb.removeChannel(channel);
@@ -1863,6 +1950,8 @@ document.addEventListener('click', e => {
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
   else if(a === 'hq'){ if(!S.allSites) return; goHq(); }
+  else if(a === 'push-on'){ enablePush(); }
+  else if(a === 'push-later'){ lsSet('pushLater', String(Date.now() + 3 * 864e5)); renderPush(); }
   else if(a === 'outbox-send'){ if(!navigator.onLine){ toast('아직 인터넷이 연결되지 않았습니다.'); return; } flushOutbox(); }
   else if(a === 'staff-call'){ const c = find(b.dataset.id); if(c && c.phone) openScheme(`tel:${c.phone.replace(/[^\d+]/g, '')}`); }
   else if(a === 'reply-call' || a === 'reply-sms'){
@@ -1941,7 +2030,7 @@ document.addEventListener('click', e => {
   else if(a === 'sync-now'){ reload().then(() => toast('새로 고쳤습니다')); }
   else if(a === 'logout'){
     if(!confirm('로그아웃할까요? 다시 쓰려면 아이디와 비밀번호를 넣어야 합니다.')) return;
-    sb.auth.signOut().then(() => { S.panel = null; S.selectedId = null; });
+    dropPush().then(() => sb.auth.signOut()).then(() => { S.panel = null; S.selectedId = null; });
   }
   else if(a === 'photo-remove'){ const [p] = pendingPhotos.splice(+b.dataset.i, 1); if(p) URL.revokeObjectURL(p.url); renderDetail(); }
   else if(a === 'photo-view'){
@@ -2090,7 +2179,7 @@ document.addEventListener('change', e => {
   if(e.target.id === 'u-role'){ const st = $('#u-site'); if(e.target.value !== 'manager') st.value = ''; else if(!st.value) st.selectedIndex = 1; }
   if(e.target.id === 'u-site'){ const r = $('#u-role'); if(!e.target.value){ if(r.value === 'manager') r.value = 'hq'; } else if(r.value !== 'manager') r.value = 'manager'; }
 });
-$('#me-select').addEventListener('change', e => { S.me = e.target.value || null; lsSet('meStaff', S.me || ''); S.selectedId = null; render(); });
+$('#me-select').addEventListener('change', e => { S.me = e.target.value || null; lsSet('meStaff', S.me || ''); S.selectedId = null; render(); if(pushState === 'on') setupPush(); });
 
 document.addEventListener('submit', e => {
   e.preventDefault();
@@ -2266,11 +2355,15 @@ async function onSignedIn(user){
   await reload();
   if(S.allSites && !S.db.sites.some(x => x.id === S.site && !x.archived)){ const f = S.db.sites.find(x => !x.archived); if(f){ S.site = f.id; deriveSite(); render(); } }
   subscribe();
+  const op = new URLSearchParams(location.search).get('open');     // 알림을 눌러 앱이 새로 열린 경우
+  if(op){ history.replaceState(history.state, '', location.pathname + location.hash); openFromPush(op); }
+  setupPush();
   if(a.role === 'manager') offerMigration();
 }
 function onSignedOut(){
   S.user = null; S.access = {}; S.hq = false; S.exec = false; S.allSites = false; S.panel = null;
   knownIds = null; callQueue = []; renderCall();
+  pushState = ''; pushSaved = ''; renderPush();
   if(channel){ sb.removeChannel(channel); channel = null; }
   applyData(emptyData());
   photoCache.clear();

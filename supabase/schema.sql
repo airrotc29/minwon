@@ -342,5 +342,91 @@ create policy "사진 올리기" on storage.objects for insert to authenticated
 create policy "사진 바꾸기" on storage.objects for update to authenticated using (bucket_id = 'photos' and public.is_manager());
 create policy "사진 지우기" on storage.objects for delete to authenticated using (bucket_id = 'photos' and public.is_manager());
 
--- 6) 바뀐 함수가 앱에 바로 보이도록 API 목록 새로 고침 ----------------------
+-- 6) 앱이 꺼져 있어도 울리는 알림(웹 푸시) -------------------------------
+--   휴대폰이 알림을 받겠다고 등록(push_subs) → 민원 접수·지시·완료 보고가 저장되면 이 DB가
+--   Edge Function 'send-push'를 불러 해당하는 사람의 휴대폰으로 알림을 보낸다.
+--   알림 서명 키(VAPID)는 send-push가 처음 실행될 때 스스로 만들어 push_secret에 저장한다(사람이 다룰 필요 없음).
+do $$ begin create extension if not exists pg_net; exception when others then raise notice 'pg_net 확장을 켤 수 없습니다: %', sqlerrm; end $$;
+
+create table if not exists public.push_subs (            -- 알림 받는 휴대폰
+  endpoint   text primary key,
+  sub        jsonb not null,
+  user_id    uuid,
+  role       text,
+  site_id    text,
+  staff_id   text,                                        -- 직원 기기에서 고른 '나는' 이름
+  updated_at timestamptz not null default now()
+);
+create table if not exists public.push_config (          -- 앱이 읽는 공개 정보
+  id           int primary key default 1 check (id = 1),
+  vapid_public text,
+  function_url text
+);
+create table if not exists public.push_secret (          -- 서버만 읽는 비밀(정책 없음 → 앱에서는 못 읽음)
+  id            int primary key default 1 check (id = 1),
+  hook          text not null default gen_random_uuid()::text,
+  vapid_public  text,
+  vapid_private text
+);
+alter table public.push_subs   enable row level security;
+alter table public.push_config enable row level security;
+alter table public.push_secret enable row level security;
+drop policy if exists "보기" on public.push_config;
+create policy "보기" on public.push_config for select to authenticated using (true);
+insert into public.push_config(id, function_url) values (1, 'https://yqmlesdwcuaqlqzrptpp.supabase.co/functions/v1/send-push')
+  on conflict (id) do update set function_url = excluded.function_url;
+insert into public.push_secret(id) values (1) on conflict (id) do nothing;
+
+create or replace function public.save_push_sub(p_sub jsonb, p_staff text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare a jsonb := my_access();
+begin
+  if a is null or a->>'role' is null or coalesce(p_sub->>'endpoint', '') = '' then raise exception 'forbidden'; end if;
+  insert into push_subs(endpoint, sub, user_id, role, site_id, staff_id, updated_at)
+    values (p_sub->>'endpoint', p_sub, auth.uid(), a->>'role', a->>'site_id', nullif(p_staff, ''), now())
+  on conflict (endpoint) do update set sub = excluded.sub, user_id = excluded.user_id, role = excluded.role,
+    site_id = excluded.site_id, staff_id = excluded.staff_id, updated_at = now();
+end $$;
+create or replace function public.remove_push_sub(p_endpoint text)
+returns void language sql security definer set search_path = public as $$
+  delete from push_subs where endpoint = p_endpoint and (user_id is null or user_id = auth.uid() or is_hq());
+$$;
+
+-- 민원 접수(complaints 새 줄)·지시/재작업/완료 보고(events 새 줄)가 생기면 send-push 호출
+create or replace function public.notify_push()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_url text; v_hook text; v_at timestamptz; payload jsonb;
+begin
+  select function_url into v_url from push_config where id = 1;
+  select hook into v_hook from push_secret where id = 1;
+  if v_url is null or v_hook is null then return new; end if;
+  if tg_table_name = 'complaints' then
+    begin v_at := (new.data->>'createdAt')::timestamptz; exception when others then v_at := now(); end;
+    if v_at < now() - interval '30 minutes' then return new; end if;     -- 백업 불러오기 등 옛 기록은 알리지 않음
+    payload := jsonb_build_object('kind', 'new', 'id', new.id, 'site_id', new.site_id, 'actor', auth.uid());
+  else
+    if coalesce(new.data->>'type', '') not in ('assigned', 'reassigned', 'rework', 'done') then return new; end if;
+    begin v_at := (new.data->>'at')::timestamptz; exception when others then v_at := now(); end;
+    if v_at < now() - interval '1 day' then return new; end if;
+    payload := jsonb_build_object('kind', new.data->>'type', 'id', new.complaint_id, 'site_id', new.site_id, 'actor', auth.uid(), 'event', new.data);
+  end if;
+  perform net.http_post(url := v_url, body := payload,
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-push-secret', v_hook));
+  return new;
+exception when others then
+  return new;                                              -- 알림이 실패해도 민원 저장은 그대로
+end $$;
+drop trigger if exists push_on_complaint on public.complaints;
+create trigger push_on_complaint after insert on public.complaints for each row execute function public.notify_push();
+drop trigger if exists push_on_event on public.events;
+create trigger push_on_event after insert on public.events for each row execute function public.notify_push();
+do $$ begin
+  revoke execute on function public.save_push_sub(jsonb, text) from public, anon;
+  grant execute on function public.save_push_sub(jsonb, text) to authenticated;
+  revoke execute on function public.remove_push_sub(text) from public, anon;
+  grant execute on function public.remove_push_sub(text) to authenticated;
+  revoke execute on function public.notify_push() from public, anon, authenticated;
+end $$;
+
+-- 7) 바뀐 함수가 앱에 바로 보이도록 API 목록 새로 고침 ----------------------
 notify pgrst, 'reload schema';
