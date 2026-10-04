@@ -1,0 +1,57 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--accent:#1E3A7B;--ink:#141B2D;--muted:#556079;--line:#D3D9E5;--bg:#EEF1F6;--y:#FFE15A;--yb:#E0B400;--red:#D01E12}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"IBM Plex Sans KR","Noto Sans KR",sans-serif;color:var(--ink)}
+.opt{width:390px;padding:16px 14px 18px;background:var(--bg)}
+.tag{display:inline-block;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border-radius:999px;padding:3px 11px;margin-bottom:6px}
+h2{margin:2px 0 12px;font-size:17px}
+.cap{font-size:12px;color:var(--muted);margin:2px 2px 6px;font-weight:600}
+.todo{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.big{background:var(--y);border:1.5px solid var(--yb);border-radius:14px;padding:11px 14px;box-shadow:0 0 12px 2px rgba(255,200,0,.45)}
+.big small{font-size:12px;color:#6B5800;font-weight:600}.big b{display:block;font-size:34px;color:var(--red);line-height:1.1}.big span{font-size:14.5px;font-weight:700}
+.big em{font-style:normal;font-size:11.5px;color:var(--red);font-weight:700;margin-left:4px}
+.flow{display:flex;align-items:center;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 6px}
+.fs{flex:1;text-align:center;border-radius:8px;padding:4px 2px}.fs b{display:block;font-size:19px}.fs span{font-size:11.5px;color:var(--muted)}
+.fs.on{background:var(--accent)}.fs.on b,.fs.on span{color:#fff}
+.ar{color:#9AA3B5;font-size:14px}
+.tot{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin:8px 4px 10px}.tot b{color:var(--ink)}
+.list{background:#fff;border:1px solid var(--line);border-radius:12px}
+.it{padding:10px 12px;border-bottom:1px solid var(--line);font-size:13px}.it:last-child{border-bottom:0}.it b{display:block;font-size:14.5px;margin:2px 0}.it .m{color:var(--muted);font-size:12px}
+.pill{display:inline-flex;border:1px solid currentColor;border-radius:999px;padding:0 7px;font-size:11px;font-weight:600;line-height:18px}
+/* staff */
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px;margin-bottom:10px}
+.tab{border-radius:9px;padding:9px 4px;text-align:center}.tab b{display:block;font-size:22px;line-height:1.1}.tab span{font-size:12.5px}
+.tab.on{background:var(--y);box-shadow:inset 0 0 0 1.5px var(--yb)}.tab.on b{color:var(--red)}
+</style></head><body>
+<section class="opt" id="m">
+  <span class="tag">추천 · 관리소장 화면</span><h2>할 일 카드 + 흐름 줄</h2>
+  <div class="cap">소장님이 할 일</div>
+  <div class="todo">
+    <div class="big"><small>새 민원</small><b>1</b><span>지시할 것</span></div>
+    <div class="big"><small>직원 완료 보고</small><b>1</b><span>회신할 것</span></div>
+  </div>
+  <div class="cap">진행 흐름 <span style="font-weight:400">(누르면 그 단계 목록)</span></div>
+  <div class="flow">
+    <div class="fs"><b>2</b><span>지시됨</span></div><span class="ar">›</span>
+    <div class="fs on"><b>3</b><span>처리중</span></div><span class="ar">›</span>
+    <div class="fs"><b>5</b><span>회신완료</span></div>
+  </div>
+  <div class="tot"><span>미결 <b>7</b> · 기한 초과 <b style="color:#D01E12">0</b></span><span>전체 <b>12</b> 보기</span></div>
+  <div class="list">
+    <div class="it"><span class="pill" style="color:#0E7C86">● 처리중</span><b>실외기 소리가 심해요</b><span class="m">342동 234호 · 박주임 · 10.04</span></div>
+    <div class="it"><span class="pill" style="color:#0E7C86">● 처리중</span><b>천장 누수</b><span class="m">101동 1203호 · 김과장, 이기사 · 완료 보고 1/2</span></div>
+  </div>
+</section>
+<section class="opt" id="s">
+  <span class="tag">추천 · 직원 화면</span><h2>3단 탭</h2>
+  <div class="tabs">
+    <div class="tab on"><b>2</b><span>내 할 일</span></div>
+    <div class="tab"><b>1</b><span>보고 완료</span></div>
+    <div class="tab"><b>4</b><span>회신 끝</span></div>
+  </div>
+  <div class="list">
+    <div class="it"><span class="pill" style="color:#A86400">● 지시됨</span><b>변기막힘</b><span class="m">420동 68713호 · 기한 10.06 · 지시: 해당 호실 방문 및 처리 바랍니다</span></div>
+    <div class="it"><span class="pill" style="color:#0E7C86">● 처리중</span><b>바퀴벌레 출몰</b><span class="m">106동 404호 · 진행 보고 1회</span></div>
+  </div>
+</section>
+</body></html>
