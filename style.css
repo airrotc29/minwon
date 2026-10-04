@@ -700,3 +700,9 @@ a.tel{color:var(--accent);font-weight:600;text-decoration:underline}
 .outbox[hidden]{display:none}
 .outbox span{flex:1;min-width:200px}
 .outbox .btn{background:#fff;color:#141B2D}
+
+/* 처리 기한 표시 */
+.tag.due{font-weight:700}
+.tag.due.over{background:#D01E12;color:#fff}
+.tag.due.today{background:#F08A00;color:#fff}
+.tag.due.tmr{background:#FFE15A;color:#141B2D}

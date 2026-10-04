@@ -494,6 +494,15 @@ function doneBy(c){
   return new Set(evs.slice(from + 1).filter(e => e.type === 'done').map(e => e.staffId));
 }
 const lastEv = (c, type) => (c.events || []).filter(e => e.type === type).slice(-1)[0];
+/* 처리 기한 표시: 지남(빨강) · 오늘까지(주황) · 내일까지(노랑) */
+function dueTag(c){
+  if(!c.due || !(c.status === 'assigned' || c.status === 'progress')) return '';
+  const today = ymd(new Date()), tmr = ymd(new Date(Date.now() + 86400000));
+  if(c.due < today){ const n = Math.round((new Date(today) - new Date(c.due)) / 86400000); return `<span class="tag due over">기한 ${n}일 지남</span>`; }
+  if(c.due === today) return '<span class="tag due today">오늘까지</span>';
+  if(c.due === tmr) return '<span class="tag due tmr">내일까지</span>';
+  return '';
+}
 const isOverdue = c => c.due && (c.status === 'assigned' || c.status === 'progress') && c.due < ymd(new Date());
 function numbers(){
   const m = {};
@@ -743,7 +752,7 @@ function renderList(){
       <span class="l1"><span class="no">#${nums[c.id]}</span><span>${esc(c.category)}</span><span>${esc(c.location)}</span>${receiver(c) ? `<span>· ${esc(receiver(c))} 접수</span>` : ''}</span>
       <span class="t">${esc(c.title)}</span>
       <span class="l3"><span class="pill s-${c.status}">${ST[c.status].label}</span>
-        ${c.urgent ? '<span class="tag">긴급</span>' : ''}${c.rework && c.status !== 'replied' && c.status !== 'done' ? '<span class="tag">재작업</span>' : ''}${isOverdue(c) ? '<span class="tag">기한 초과</span>' : ''}
+        ${c.urgent ? '<span class="tag">긴급</span>' : ''}${c.rework && c.status !== 'replied' && c.status !== 'done' ? '<span class="tag">재작업</span>' : ''}${dueTag(c)}
         <span>${esc(namesOf(c))}</span><span>·</span><span>${fmt(c.createdAt)}</span>${photoCount(c) ? `<span>· 사진 ${photoCount(c)}</span>` : ''}</span>
     </button>`).join('');
 }
@@ -1492,7 +1501,7 @@ function complaintView(){
   <div class="d-head">
     <span class="no">#${no} · 접수 ${fmt(c.createdAt)}</span>
     <h2>${esc(c.title)}</h2>
-    <div class="pills"><span class="pill s-${c.status}">${ST[c.status].label}</span>${c.urgent ? '<span class="tag">긴급</span>' : ''}${isOverdue(c) ? '<span class="tag">기한 초과</span>' : ''}</div>
+    <div class="pills"><span class="pill s-${c.status}">${ST[c.status].label}</span>${c.urgent ? '<span class="tag">긴급</span>' : ''}${dueTag(c)}</div>
   </div>
   <dl class="meta">
     <div><dt>동·호수</dt><dd>${esc(c.location)}</dd></div>
