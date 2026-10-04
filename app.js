@@ -1495,9 +1495,9 @@ function managerActions(c){
       <form id="f-reply" class="sec" data-final="${final}">
         <p class="hint">문구를 고친 뒤 <b>카톡으로 보내기</b>(휴대폰) 또는 복사해 보내거나 인터폰·방문으로 알리고, 알린 방법을 기록하세요.</p>
         <textarea id="rp-text" rows="9">${esc(replyTemplate(c))}</textarea>
-        ${shareRefs(c).length ? `<label class="check"><input type="checkbox" id="rp-photos" checked> ${final ? '완료' : '진행'} 사진 ${shareRefs(c).length}장 함께 보내기</label>${thumbsHTML(shareRefs(c))}` : ''}
+        ${shareRefs(c).length ? `<label class="check"><input type="checkbox" id="rp-photos" checked> ${final ? '완료' : '진행'} 사진 ${shareRefs(c).length}장도 보내기 <small>(문구를 먼저, 이어서 사진을 따로 보냅니다)</small></label>${thumbsHTML(shareRefs(c))}` : ''}
         <div class="btns">
-          <button type="button" class="btn kakao" data-act="share-kakao">카톡으로 보내기</button>
+          <button type="button" class="btn kakao" id="share-btn" data-act="share-kakao">${shareLabel(c)}</button>
           <button type="button" class="btn" data-act="copy-reply">문구 복사</button>
           <button type="button" class="btn" data-act="reset-reply">기본 문구로</button>
           <span class="spacer"></span>
@@ -1565,28 +1565,47 @@ function prepareShareFiles(refs){
       .catch(() => shareFiles.delete(ref));
   });
 }
+/* 카카오톡은 사진을 함께 공유하면 문구를 빼 버린다. 그래서 ① 문구 → ② 사진 순서로 따로 보낸다 */
+let sharePhase = {id:null, phase:0};
+const photosChecked = () => { const e = document.getElementById('rp-photos'); return !!(e && e.checked); };
+function shareLabel(c){
+  if(!shareRefs(c).length) return '카톡으로 보내기';
+  return sharePhase.id === c.id && sharePhase.phase === 1 ? '② 사진 보내기' : '① 문구 보내기';
+}
+function updateShareBtn(){
+  const c = find(S.selectedId), b = document.getElementById('share-btn'); if(!c || !b) return;
+  b.textContent = photosChecked() ? shareLabel(c) : '카톡으로 보내기';
+}
 function shareKakao(){
   const c = find(S.selectedId); if(!c) return;
   const text = val('rp-text');
-  const withPhotos = document.getElementById('rp-photos') && document.getElementById('rp-photos').checked;
+  const withPhotos = photosChecked();
   const files = withPhotos ? shareRefs(c).map(r => shareFiles.get(r)).filter(Boolean) : [];
-  if(navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+  const canFiles = files.length && navigator.canShare && navigator.canShare({files});
   const after = () => { const m = document.getElementById('rp-method'); if(m) m.value = '카톡'; };
+  if(navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
   if(!navigator.share){
     after();
     toast('문구를 복사했습니다. PC 카톡 대화창에 붙여넣기(Ctrl+V) 하세요. 사진은 크게 보기에서 저장해 보내세요.');
     return;
   }
-  const data = {text};
-  if(files.length && navigator.canShare && navigator.canShare({files})) data.files = files;
-  navigator.share(data).then(() => {
+  const fail = err => { if(err && err.name === 'AbortError') return; after(); toast('공유창을 열지 못했습니다. 문구를 복사했으니 카톡에 붙여넣기 하세요.'); };
+  // ② 사진 단계
+  if(withPhotos && canFiles && sharePhase.id === c.id && sharePhase.phase === 1){
+    navigator.share({files}).then(() => {
+      sharePhase = {id:null, phase:0}; after(); updateShareBtn();
+      toast('문구와 사진을 모두 보냈습니다. 아래에서 기록 버튼을 누르세요.');
+    }).catch(fail);
+    return;
+  }
+  // ① 문구 단계(사진이 없거나 사진 공유를 못 하는 기기는 문구만 한 번에)
+  navigator.share({text}).then(() => {
     after();
-    toast(data.files ? '보냈으면 아래에서 기록 버튼을 누르세요. 카톡에 글이 빠졌으면 붙여넣기 하세요(문구 복사됨).' : '보냈으면 아래에서 기록 버튼을 누르세요.');
-  }).catch(err => {
-    if(err && err.name === 'AbortError') return;
-    after();
-    toast('공유창을 열지 못했습니다. 문구를 복사했으니 카톡에 붙여넣기 하세요.');
-  });
+    if(withPhotos && canFiles){
+      sharePhase = {id:c.id, phase:1}; updateShareBtn();
+      toast('문구를 보냈습니다. 이어서 ② 사진 보내기를 눌러 같은 방에 사진을 보내세요.');
+    }else toast('보냈으면 아래에서 기록 버튼을 누르세요.' + (withPhotos ? ' 사진은 이 기기에서 함께 보낼 수 없어 크게 보기에서 저장해 보내세요.' : ''));
+  }).catch(fail);
 }
 
 function replyTemplate(c){
@@ -1855,6 +1874,7 @@ window.addEventListener('resize', () => { if(document.body.classList.contains('s
 try{ history.replaceState(null, ''); }catch(e){}   // 새로 고침 뒤에는 처음 화면부터 기록
 document.addEventListener('change', e => { if(e.target.id === 'hq-month' && e.target.value){ S.hqMonth = e.target.value; resetDetail(); } });
 document.addEventListener('change', e => {
+  if(e.target.id === 'rp-photos') updateShareBtn();
   if(e.target.id === 'u-role'){ const st = $('#u-site'); if(e.target.value !== 'manager') st.value = ''; else if(!st.value) st.selectedIndex = 1; }
   if(e.target.id === 'u-site'){ const r = $('#u-role'); if(!e.target.value){ if(r.value === 'manager') r.value = 'hq'; } else if(r.value !== 'manager') r.value = 'manager'; }
 });
