@@ -1514,14 +1514,14 @@ function managerActions(c){
       <div class="btns"><button type="submit" class="btn primary">지시 보내기</button></div>
     </form>`;
   if(c.status === 'received'){
-    html += `<div class="act">${assignForm('직원에게 지시', c.urgent ? ymd(new Date()) : '')}</div>`;
+    html += `<div class="act callout">${assignForm('직원에게 지시', c.urgent ? ymd(new Date()) : '')}</div>`;
   }
   if(c.status === 'assigned' || c.status === 'progress'){
     html += `<details class="more" id="dt-assign"><summary>담당 변경 · 추가 지시</summary>${assignForm('')}</details>`;
   }
   if(c.status !== 'replied'){
     const final = c.status === 'done';
-    html += `<${final ? 'div class="act"' : 'details class="more" id="dt-notice"'}>
+    html += `<${final ? 'div class="act callout"' : 'details class="more" id="dt-notice"'}>
       ${final ? '<h3>민원인에게 처리 결과 회신</h3>' : '<summary>민원인에게 중간 안내</summary>'}
       <form id="f-reply" class="sec" data-final="${final}">
         <p class="hint">문구를 고친 뒤 <b>카톡으로 보내기</b>(휴대폰)나 <b>문구 복사</b>로 보내고, 보낸 뒤 아래 버튼으로 기록하세요.</p>

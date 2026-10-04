@@ -624,3 +624,17 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 /* 지시해 주세요·회신해 주세요 목록: 열어 볼 때까지 깜빡 */
 .row.blink{animation:row-blink 1s ease-in-out infinite}
 @keyframes row-blink{0%,100%{background:transparent;box-shadow:inset 5px 0 0 #E0B400}50%{background:rgba(255,215,40,.38);box-shadow:inset 5px 0 0 #D01E12}}
+
+/* 소장이 지금 해야 할 칸(직원에게 지시 / 민원인에게 처리 결과 회신): 노란 바탕으로 계속 깜빡 */
+.act.callout{border:2px solid #E0B400;border-radius:14px;padding:14px;margin-top:4px;color:#141B2D;animation:callout-blink 1.2s ease-in-out infinite}
+.act.callout h3{color:#141B2D;font-size:16px}
+.act.callout .hint{color:#4A4020}
+.act.callout legend,.act.callout .fld > span{color:#4A4020}
+@keyframes callout-blink{0%,100%{background:#FFF6C2;border-color:#E0B400;box-shadow:0 0 0 0 rgba(255,200,0,0)}50%{background:#FFE15A;border-color:#D01E12;box-shadow:0 0 14px 3px rgba(255,200,0,.6)}}
+/* 노란 칸 안은 어두운 화면에서도 밝은 입력칸으로(글자가 묻히지 않게) */
+.act.callout textarea,.act.callout input[type=text],.act.callout input[type=date],.act.callout select{background:#fff;color:#141B2D;border-color:#C9B65A;color-scheme:light}
+.act.callout .btn:not(.primary):not(.kakao){background:#fff;color:#141B2D;border-color:#C9B65A}
+.act.callout .btn.primary{background:#1E3A7B;border-color:#1E3A7B;color:#fff}
+.act.callout .chk span{background:#fff;color:#141B2D;border-color:#C9B65A}
+.act.callout .chk span small,.act.callout fieldset legend,.act.callout fieldset legend small,.act.callout label.check,.act.callout label.check small{color:#4A4020}
+.act.callout .chk input:checked + span{background:#FFF3B0;border-color:#E0B400}
