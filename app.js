@@ -1016,7 +1016,7 @@ function complaintRows(list, names){
   });
   return {main, evs};
 }
-const LOG_LABEL = {received:'접수', assigned:'지시', reassigned:'담당 변경', rework:'재작업 지시', progress:'진행 보고', done:'완료 보고', notice:'중간 안내', replied:'회신 완료'};
+const LOG_LABEL = {edited:'접수 내용 수정', received:'접수', assigned:'지시', reassigned:'담당 변경', rework:'재작업 지시', progress:'진행 보고', done:'완료 보고', notice:'중간 안내', replied:'회신 완료'};
 async function exportXLSX(list, names, settings, filename){
   const {main, evs} = complaintRows(list, names);
   const staffRows = [['이름', '담당 업무']].concat((names || S.db.staff).map(st => [st.name || '', st.duty || '']));
@@ -1474,7 +1474,8 @@ const EV = {
   progress:{c:'--st-progress', t:e => `${staffName(e.staffId)} 진행 보고`},
   done:{c:'--st-done', t:e => `${staffName(e.staffId)} 완료 보고`},
   notice:{c:'--accent', t:e => `민원인 중간 안내${e.method ? ` (${e.method})` : ''}`},
-  replied:{c:'--st-replied', t:e => `민원인 회신 완료${e.method ? ` (${e.method})` : ''}`}
+  replied:{c:'--st-replied', t:e => `민원인 회신 완료${e.method ? ` (${e.method})` : ''}`},
+  edited:{c:'--muted', t:e => '접수 내용 수정'}
 };
 
 function complaintView(){
@@ -1555,6 +1556,22 @@ function managerActions(c){
         <div class="btns"><button type="submit" class="btn danger">재작업 지시</button></div>
       </form></details>`;
   }
+  // 접수 내용 고치기(동·호수·전화·분류·제목·내용 등 잘못 적은 것)
+  html += `<details class="more" id="dt-edit"><summary>접수 내용 고치기</summary>
+    <form id="f-edit" class="sec">
+      <div class="grid2">
+        <label class="fld"><span>동</span><input type="text" id="e-dong" inputmode="numeric" value="${esc(c.dong || '')}" required></label>
+        <label class="fld"><span>호수</span><input type="text" id="e-ho" inputmode="numeric" value="${esc(c.ho || '')}"></label>
+        <label class="fld"><span>민원인 전화번호 <small>(선택)</small></span><input type="tel" id="e-phone" inputmode="tel" value="${esc(c.phone || '')}"></label>
+        <label class="fld"><span>분류</span><select id="e-cat">${opts(CATS.includes(c.category) ? CATS : CATS.concat([c.category]).filter(Boolean), c.category)}</select></label>
+        <label class="fld"><span>접수 경로</span><select id="e-ch">${opts(CHANNELS.includes(c.channel) ? CHANNELS : CHANNELS.concat([c.channel]).filter(Boolean), c.channel)}</select></label>
+      </div>
+      <label class="check"><input type="checkbox" id="e-urgent"${c.urgent ? ' checked' : ''}> 긴급 처리</label>
+      <label class="fld"><span>민원 제목</span><input type="text" id="e-title" value="${esc(c.title || '')}" required></label>
+      <label class="fld"><span>민원 내용</span><textarea id="e-detail">${esc(c.detail || '')}</textarea></label>
+      <div class="btns"><button type="submit" class="btn primary">고친 내용 저장</button></div>
+      <p class="hint">고친 항목은 처리 내역에 ‘접수 내용 수정’으로 남습니다.</p>
+    </form></details>`;
   html += `<div class="btns" style="justify-content:flex-end"><button type="button" class="btn sm danger" data-act="del" data-id="${esc(c.id)}">민원 삭제</button></div>`;
   return html;
 }
@@ -2094,6 +2111,18 @@ document.addEventListener('submit', e => {
     const final = f.dataset.final === 'true', text = val('rp-text'), method = val('rp-method');
     const patch = final ? {status:'replied', repliedAt:now()} : {};
     run(f, () => store.update(c.id, patch, event(final ? 'replied' : 'notice', {text, method}), `${final ? '회신 완료' : '중간 안내'}: ${c.location}`), final ? '회신완료로 기록했습니다' : '중간 안내를 기록했습니다');
+  }
+  else if(f.id === 'f-edit' && c){
+    if(!S.canManage) return;
+    const dong = val('e-dong'), ho = val('e-ho');
+    const location = /^\d+$/.test(dong) ? `${dong}동${ho ? ' ' + ho + (/^\d+$/.test(ho) ? '호' : '') : ''}` : [dong, ho].filter(Boolean).join(' ');
+    const next = {dong, ho, location, phone:val('e-phone').replace(/[^\d+\-\s]/g, '').trim(), category:val('e-cat'), channel:val('e-ch'),
+      urgent:document.getElementById('e-urgent').checked, title:val('e-title'), detail:val('e-detail')};
+    const NAMES = {location:'동·호수', phone:'전화번호', category:'분류', channel:'접수 경로', urgent:'긴급', title:'제목', detail:'내용'};
+    const changed = Object.keys(NAMES).filter(k => String(c[k] == null ? '' : c[k]) !== String(next[k] == null ? '' : next[k]));
+    if(!changed.length && c.dong === dong && (c.ho || '') === ho){ toast('바뀐 내용이 없습니다'); return; }
+    const text = changed.map(k => k === 'urgent' ? `긴급 ${next.urgent ? '지정' : '해제'}` : k === 'detail' ? '내용 수정' : `${NAMES[k]}: ${c[k] || '(없음)'} → ${next[k] || '(없음)'}`).join(' · ') || '동·호수 수정';
+    run(f, () => store.update(c.id, next, event('edited', {text})), '접수 내용을 고쳤습니다');
   }
   else if(f.id === 'f-report' && c){
     const kind = (e.submitter && e.submitter.value) || 'progress', text = val('rp-report');
