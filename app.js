@@ -504,7 +504,7 @@ function base(){
   if(S.role === 'staff') return S.me ? S.complaints.filter(c => assigneesOf(c).includes(S.me) || c.receivedBy === S.me) : [];
   return S.complaints;
 }
-/* 목록 거르기. 소장: 할 일 카드(지시할 것·회신할 것) + 흐름(지시됨·처리중·회신완료) + 미결·기한 초과·전체
+/* 목록 거르기. 소장: 할 일 카드(지시해 주세요·회신해 주세요) + 흐름(지시됨·처리중·회신완료) + 미결·기한 초과·전체
    직원: 탭(내 할 일·보고 완료·회신 끝) + 내가 접수한 민원 */
 const STAFF_F = ['todo', 'reported', 'replied', 'mine'];
 const isTodo = c => assigneesOf(c).includes(S.me) && (c.status === 'assigned' || c.status === 'progress') && !doneBy(c).has(S.me);
@@ -670,7 +670,7 @@ function render(){
 
   const waiting = S.complaints.filter(c => c.status === 'done').length;
   const al = $('#reply-alert');
-  al.hidden = true;                 // '회신할 것' 카드가 같은 일을 하므로 띠는 숨김
+  al.hidden = true;                 // '회신해 주세요' 카드가 같은 일을 하므로 띠는 숨김
   al.innerHTML = `<span>직원 완료 보고가 올라왔습니다. 민원인에게 결과를 알려 주세요.</span><span>회신 대기 <b>${waiting}</b>건</span>`;
 
   const warn = S.role !== 'manager' ? '' : (SERVER && !S.hq) ? '' : !SERVER ? '서버가 아직 설정되지 않아 이 기기에만 저장됩니다. README의 「서버 설정」 안내를 따라 주세요.'
@@ -699,7 +699,7 @@ function renderSummary(){
     const step = (f, label) => btn(f, 'fstep', `<b>${n(f)}</b><span>${label}</span>`);
     const od = n('overdue');
     html = `<div class="mcap">소장님이 할 일</div>
-      <div class="todo-cards">${card('received', '새 민원', '지시할 것')}${card('done', '직원 완료 보고', '회신할 것')}</div>
+      <div class="todo-cards">${card('received', '새 민원', '지시해 주세요')}${card('done', '직원 완료 보고', '회신해 주세요')}</div>
       <div class="mcap">진행 흐름 <span>(누르면 그 단계 목록)</span></div>
       <div class="fflow">${step('assigned', '지시됨')}<i aria-hidden="true">›</i>${step('progress', '처리중')}<i aria-hidden="true">›</i>${step('replied', '회신완료')}</div>
       <div class="mtot">${btn('open', 'tlink', `미결 <b>${n('open')}</b>`)}${btn('overdue', `tlink${od ? ' bad' : ''}`, `기한 초과 <b>${od}</b>`)}<span class="sp"></span>${btn('all', 'tlink', `전체 <b>${n('all')}</b> 보기`)}</div>`;
