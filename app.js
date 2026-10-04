@@ -1447,7 +1447,7 @@ document.addEventListener('click', e => {
     // 카카오톡 안 브라우저 → 기기의 기본 브라우저(크롬·사파리)로 같은 주소 열기
     location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
   }
-  else if(a === 'hq'){ if(!S.hq) return; S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
+  else if(a === 'hq'){ if(!S.hq) return; if(history.state && history.state.site) history.back(); else goHq(); }
   else if(a === 'hq-enter'){ if(!S.hq) return; enterSite(b.dataset.site); }
   else if(a === 'hq-print'){ if(S.hq) printHqReport(); }
   else if(a === 'hq-archive'){
@@ -1580,14 +1580,24 @@ document.addEventListener('change', async e => {
   }
 });
 /* 본사: 사업장 바꾸기 */
-function enterSite(id){
+/* 본사 담당자가 사업장에 들어가면 브라우저 기록을 한 칸 쌓아, 휴대폰 뒤로 가기 버튼으로 본사 화면에 돌아올 수 있게 한다 */
+function enterSite(id, fromHistory){
   if(!S.db.sites.some(x => x.id === id)) return;
+  if(S.hq && !fromHistory){
+    try{ if(history.state && history.state.site) history.replaceState({site:id}, ''); else history.pushState({site:id}, ''); }catch(e){}
+  }
   S.site = id; lsSet('site', id);
   S.panel = null; S.selectedId = null; S.filter = 'open'; S.q = '';
   S.role = 'manager'; lsSet('role', 'manager');
   deriveSite(); resetDetail(); window.scrollTo({top:0});
 }
 $('#site-select').addEventListener('change', e => { if(S.hq) enterSite(e.target.value); });
+function goHq(){ S.panel = 'hq'; S.selectedId = null; render(); window.scrollTo({top:0}); }
+window.addEventListener('popstate', e => {
+  if(!S.hq) return;
+  if(e.state && e.state.site) enterSite(e.state.site, true); else goHq();
+});
+try{ if(history.state && history.state.site) history.replaceState(null, ''); }catch(e){}   // 새로 고침 뒤에는 본사 화면부터
 document.addEventListener('change', e => { if(e.target.id === 'hq-month' && e.target.value){ S.hqMonth = e.target.value; resetDetail(); } });
 $('#me-select').addEventListener('change', e => { S.me = e.target.value || null; lsSet('meStaff', S.me || ''); S.selectedId = null; render(); });
 
