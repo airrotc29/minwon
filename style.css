@@ -638,3 +638,7 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 .act.callout .chk span{background:#fff;color:#141B2D;border-color:#C9B65A}
 .act.callout .chk span small,.act.callout fieldset legend,.act.callout fieldset legend small,.act.callout label.check,.act.callout label.check small{color:#4A4020}
 .act.callout .chk input:checked + span{background:#FFF3B0;border-color:#E0B400}
+/* 노란 바탕 위 글자는 어두운 화면에서도 진하게 */
+.stab[aria-pressed="true"],.stab[aria-pressed="true"] span,.stab[aria-pressed="true"] b{color:#141B2D}
+.stab.hot[aria-pressed="true"] b{color:#D01E12}
+.todo-card,.todo-card span{color:#141B2D}
