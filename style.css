@@ -565,3 +565,5 @@ fieldset.fld.multi legend small{color:var(--muted);font-weight:400}
 .chk input:checked + span{background:#FFF3B0;border-color:#E0B400}
 .chk input:checked + span::before{background:var(--accent);border-color:var(--accent);content:"✓";color:#fff;font-size:13px;line-height:14px;text-align:center}
 .chk input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
+/* 반짝이는 칩도 선택 상태가 보이도록 남색 테두리 */
+.chip.wait[aria-pressed="true"]{outline:3px solid var(--accent);outline-offset:1px}

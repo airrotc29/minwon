@@ -677,7 +677,8 @@ function renderSummary(){
     const dot = ST[k] ? `<i class="dot s-${k}"></i>` : '';
     const n = cnt(k);
     const attn = ((k === 'done' || k === 'received') && S.role === 'manager' && n > 0) ? ' attn' : '';
-    const wait = k === 'received' ? (n ? ' wait spark' : ' wait') : '';   // 지시 대기: 노란 바탕, 건수가 있으면 반짝임
+    // 지시 대기·회신 대기(소장 화면): 노란 바탕, 건수가 있으면 반짝이고 숫자가 빨갛게 깜빡
+    const wait = (k === 'received' || (k === 'done' && S.role === 'manager')) ? (n ? ' wait spark' : ' wait') : '';   // 지시 대기: 노란 바탕, 건수가 있으면 반짝임
     return `<button type="button" class="chip${attn}${wait}${n ? '' : ' zero'}" data-act="filter" data-f="${k}" aria-pressed="${S.filter === k}">${dot}<span>${label}</span><b>${n}</b></button>`;
   }).join('') + `</div><input type="text" id="q" class="search" placeholder="검색: 동호수·내용·담당" value="${esc(searchVal)}" aria-label="민원 검색">`;
   if(hadFocus){ const q = $('#q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
