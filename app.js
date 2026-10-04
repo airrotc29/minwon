@@ -495,6 +495,23 @@ function doneBy(c){
 }
 const lastEv = (c, type) => (c.events || []).filter(e => e.type === type).slice(-1)[0];
 /* 처리 기한 표시: 지남(빨강) · 오늘까지(주황) · 내일까지(노랑) */
+/* 같은 세대(같은 동·호수) 이전 민원 */
+const unitKey = c => {
+  const d = String(c.dong || '').replace(/동$/, '').trim(), h = String(c.ho || '').replace(/호$/, '').trim();
+  return d && h ? `${d}|${h}` : (c.location || '').replace(/\s+/g, '');
+};
+function sameUnit(c){
+  const k = unitKey(c); if(!k) return [];
+  return S.complaints.filter(x => x.id !== c.id && unitKey(x) === k).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+function householdHTML(c){
+  const list = sameUnit(c); if(!list.length) return '';
+  const rows = list.slice(0, 8).map(x => { const d = lastEv(x, 'done'); return `<button type="button" class="hh-row" data-act="open" data-id="${esc(x.id)}">
+      <span class="hh-l1"><span class="pill s-${x.status}">${esc(ST[x.status] ? ST[x.status].chip : x.status)}</span><b>${esc(x.title || '')}</b></span>
+      <span class="hh-l2">${fmt(x.createdAt).slice(0, 9)} · ${esc(x.category || '')}${d && d.text ? ' · ' + esc(d.text.slice(0, 30)) : ''}</span></button>`; }).join('');
+  return `<details class="household"${list.length ? ' open' : ''}><summary>🏠 같은 세대 이전 민원 <b>${list.length}건</b>${list.length >= 2 ? ' <span class="tag">반복 민원</span>' : ''}</summary>
+    <div class="hh-list">${rows}${list.length > 8 ? `<p class="hint">최근 8건만 보입니다. 위 검색 칸에 동·호수를 넣으면 모두 볼 수 있습니다.</p>` : ''}</div></details>`;
+}
 function dueTag(c){
   if(!c.due || !(c.status === 'assigned' || c.status === 'progress')) return '';
   const today = ymd(new Date()), tmr = ymd(new Date(Date.now() + 86400000));
@@ -1510,6 +1527,7 @@ function complaintView(){
     <div><dt>분류 · 경로</dt><dd>${esc(c.category)} · ${esc(c.channel)}</dd></div>
   </dl>
   ${c.detail ? `<p class="body-text">${esc(c.detail)}</p>` : ''}
+  ${householdHTML(c)}
   ${order}
   <div class="sec"><h3>처리 내역</h3>
     <ol class="tl">${(c.events || []).map(e => { const d = EV[e.type] || EV.received; return `<li style="--c:var(${d.c})"><div class="h"><b>${esc(d.t(e))}</b><time>${fmt(e.at)}</time>${e.due ? `<span class="sub">기한 ${fmtDate(e.due)}</span>` : ''}</div>${e.text ? `<p>${esc(e.text)}</p>` : ''}${thumbsHTML(e.photos)}</li>`; }).join('')}</ol>
