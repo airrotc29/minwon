@@ -484,3 +484,8 @@ body.readonly #f-monthly.ro .fld:not(:first-child),body.readonly #f-monthly.ro b
 body.readonly #staff-picker{display:none!important}
 .popup-body p{margin:0 0 12px;line-height:1.6}
 .popup-body .btns{margin-top:16px}
+
+/* 직원 '나는 [이름 선택]' 칸: 눈에 띄도록 노란 바탕 */
+.picker{background:#FFE15A;border:1px solid #E0B400;border-radius:10px;padding:5px 6px 5px 12px;color:#4A3B00;font-weight:600}
+.picker select{background:#FFF3B0;color:#141B2D;border:1px solid #E0B400;font-weight:600;min-width:150px}
+.picker select:focus-visible{outline:2px solid #B88A00;outline-offset:1px}
