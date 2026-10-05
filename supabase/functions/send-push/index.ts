@@ -25,7 +25,7 @@ const place = c => c.location || [c.dong, c.ho].filter(Boolean).join(' ') || '';
 const short = (t, n = 60) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 
 // 누구에게 무엇을 보낼지 정한다(순수 함수: 시험하기 쉽도록 분리)
-export function plan(p, c, subs) {
+export function plan(p, c, subs, names = {}) {
   const d = (c && c.data) || {};
   // 같은 계정이라도 다른 기기(PC에서 접수 → 휴대폰)에는 보낸다. 접수한 그 기기는 앱 화면이 열려 있어 서비스 워커가 알림을 띄우지 않는다.
   const notActor = (_s) => true;
@@ -37,11 +37,16 @@ export function plan(p, c, subs) {
     };
   }
   if (p.kind === 'assigned' || p.kind === 'reassigned' || p.kind === 'rework') {
+    // 지시는 그 사업장 직원 전원에게 울린다. 지시받은 직원에게는 '나에게 온 지시'로, 나머지에게는 누구에게 갔는지 보여 준다.
     const ev = p.event || {};
     const ids = (ev.staffIds && ev.staffIds.length ? ev.staffIds : [ev.staffId]).filter(Boolean);
+    const who = ids.map(id => (names && names[id]) || '').filter(Boolean).join(', ');
+    const body = short(`${place(d)} · ${d.detail || d.title || ''}${ev.text ? ' ▶ 지시: ' + ev.text : ''}`, 110);
+    const rework = p.kind === 'rework';
     return {
-      to: subs.filter(s => inSite(s) && s.role === 'staff' && ids.includes(s.staff_id) && notActor(s)),
-      msg: { title: p.kind === 'rework' ? '🔁 재작업 지시' : '📋 새 지시가 왔습니다', body: short(`${place(d)} · ${d.detail || d.title || ''}${ev.text ? ' ▶ 지시: ' + ev.text : ''}`, 110), tag: `job-${p.id}` },
+      to: subs.filter(s => inSite(s) && s.role === 'staff' && notActor(s)),
+      msg: { title: `${rework ? '🔁 재작업 지시' : '📋 업무 지시'}${who ? ' → ' + who : ''}`, body, tag: `job-${p.id}` },
+      mine: { ids, msg: { title: rework ? '🔁 나에게 재작업 지시' : '📋 나에게 새 지시가 왔습니다', body, tag: `job-${p.id}` } },
     };
   }
   if (p.kind === 'done' && d.status === 'done') {
@@ -63,12 +68,17 @@ Deno.serve(async (req) => {
     const { data: c } = await sb.from('complaints').select('id, site_id, data').eq('id', p.id).maybeSingle();
     if (!c) return json({ sent: 0, reason: 'gone' });
     const { data: subs } = await sb.from('push_subs').select('*').eq('site_id', p.site_id);
-    const { to, msg } = plan(p, c, subs || []);
+    let names = {};
+    if (p.kind === 'assigned' || p.kind === 'reassigned' || p.kind === 'rework') {
+      const { data: st } = await sb.from('staff').select('id, data').eq('site_id', p.site_id);
+      (st || []).forEach((r) => { names[r.id] = (r.data && r.data.name) || ''; });
+    }
+    const { to, msg, mine } = plan(p, c, subs || [], names);
     if (!msg || !to.length) return json({ sent: 0 });
     webpush.setVapidDetails('mailto:admin@sunmin.kr', k.vapid_public, k.vapid_private);
     let sent = 0;
     await Promise.all(to.map(async (s) => {
-      try { await webpush.sendNotification(s.sub, JSON.stringify({ ...msg, id: p.id }), { TTL: 60 * 60 * 12, urgency: 'high' }); sent++; }
+      try { await webpush.sendNotification(s.sub, JSON.stringify({ ...(mine && mine.ids.includes(s.staff_id) ? mine.msg : msg), id: p.id }), { TTL: 60 * 60 * 12, urgency: 'high' }); sent++; }
       catch (e) { if (e && (e.statusCode === 404 || e.statusCode === 410)) await sb.from('push_subs').delete().eq('endpoint', s.endpoint); }
     }));
     return json({ sent, of: to.length });

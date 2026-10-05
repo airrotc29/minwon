@@ -179,7 +179,7 @@ function applyChange(table, p){
     if(p.eventType === 'DELETE') db.users = db.users.filter(u => u.email !== old.email);
     else { const i = db.users.findIndex(u => u.email === row.email); if(i >= 0) db.users[i] = rowToUser(row); else db.users.push(rowToUser(row)); }
   }
-  if(table === 'complaints') checkNew();
+  if(table === 'complaints' || table === 'events') checkNew();
   deriveSite();
   setSync('ok');
   render();
@@ -237,7 +237,8 @@ function speak(text){
 }
 const VIB = [500, 200, 500, 200, 500, 200, 900];
 function placeOf(c){ return c.location || [c.dong, c.ho].filter(Boolean).join(' ') || ''; }
-const callWord = it => it.kind === 'job' ? '새 지시가 왔습니다' : '새 민원이 접수되었습니다';
+const callWord = it => it.kind === 'job' ? '나에게 새 지시가 왔습니다' : it.kind === 'jobAll' ? `업무 지시가 나갔습니다. ${namesOf(it.c)}` : '새 민원이 접수되었습니다';
+const callTitle = it => it.kind === 'job' ? '나에게 새 지시' : it.kind === 'jobAll' ? `업무 지시 → ${namesOf(it.c)}` : '새 민원 접수';
 /* 확인을 누를 때까지 20초마다 다시 울린다(최대 3분) */
 let ringTimer = null, ringUntil = 0;
 function ring(first){
@@ -260,9 +261,9 @@ function notifyNew(list, kind){
   startRing();
   const it = callQueue[callQueue.length - 1], c = it.c;
   const text = `${S.allSites ? siteName(siteOf(c)) + ' · ' : ''}${placeOf(c)} ${c.category || ''} ${c.title || ''}`.trim();
-  const title = it.kind === 'job' ? '새 지시' : '새 민원 접수';
+  const title = callTitle(it);
   if(document.hidden){
-    document.title = `(${callQueue.length}) ${title} · ${document.title.replace(/^\(\d+\) (새 민원 접수|새 지시) · /, '')}`;
+    document.title = `(${callQueue.length}) ${title} · ${document.title.replace(/^\(\d+\) [^·]+ · /, '')}`;
     if('Notification' in window && Notification.permission === 'granted'){
       const opt = {body:text, tag:'minwon-new', renotify:true, requireInteraction:true, vibrate:VIB, icon:'icon-192.png'};
       navigator.serviceWorker && navigator.serviceWorker.ready ? navigator.serviceWorker.ready.then(r => r.showNotification(title, opt)).catch(() => { try{ new Notification(title, opt); }catch(e){} }) : (() => { try{ new Notification(title, opt); }catch(e){} })();
@@ -274,7 +275,7 @@ function renderCall(){
   if(!callQueue.length){ el.hidden = true; stopRing(); return; }
   const it = callQueue[callQueue.length - 1], c = it.c, more = callQueue.length - 1;
   el.hidden = false;
-  el.innerHTML = `<span class="nc-ico" aria-hidden="true">${it.kind === 'job' ? '📋' : '🔔'}</span><span class="nc-text"><b>${it.kind === 'job' ? '새 지시' : '새 민원 접수'}${more ? ` 외 ${more}건` : ''}</b>${S.allSites ? esc(siteName(siteOf(c))) + ' · ' : ''}${esc(placeOf(c))} ${esc(c.category || '')} ${esc(c.title || '')}</span><button type="button" class="btn sm" data-act="call-open" data-id="${esc(c.id)}">확인</button>`;
+  el.innerHTML = `<span class="nc-ico" aria-hidden="true">${it.kind === 'new' ? '🔔' : '📋'}</span><span class="nc-text"><b>${esc(callTitle(it))}${more ? ` 외 ${more}건` : ''}</b>${S.allSites ? esc(siteName(siteOf(c))) + ' · ' : ''}${esc(placeOf(c))} ${esc(c.category || '')} ${esc(c.title || '')}</span><button type="button" class="btn sm" data-act="call-open" data-id="${esc(c.id)}">확인</button>`;
 }
 /* 새로 생긴 민원이 있으면 알린다. 접수한 지 30분이 넘은 것(복원·오래 꺼져 있던 뒤)은 알리지 않는다.
    직원 화면이면 나에게 새로 지시된 민원도 알린다. */
@@ -288,13 +289,19 @@ function checkNew(){
     ids.forEach(id => knownIds.add(id));
     if(fresh.length) notifyNew(fresh, 'new');
   }
-  if(S.role === 'staff' && S.me){
-    const jobs = S.db.complaints.filter(c => isTodo(c) && assigneesOf(c).includes(S.me));
-    const key = c => c.id + '|' + (c.events || []).filter(e => e.type === 'assigned' || e.type === 'reassigned' || e.type === 'rework').map(e => e.id).sort().join(',');   // 다시 지시·재작업도 새 지시로
-    if(knownJobs === null || knownJobs.me !== S.me){ knownJobs = new Set(jobs.map(key)); knownJobs.me = S.me; return; }
+  if(S.role === 'staff'){
+    // 지시가 나가면 직원 전원에게 울린다(나에게 온 지시는 '새 지시', 다른 직원 지시는 '업무 지시 → 이름')
+    const jobEv = c => (c.events || []).filter(e => e.type === 'assigned' || e.type === 'reassigned' || e.type === 'rework');
+    const key = c => c.id + '|' + jobEv(c).map(e => e.id).sort().join(',');
+    const jobs = S.db.complaints.filter(c => jobEv(c).length && (c.status === 'assigned' || c.status === 'progress'));
+    if(knownJobs === null){ knownJobs = new Set(S.db.complaints.map(key)); return; }
     const neu = jobs.filter(c => !knownJobs.has(key(c)));
-    jobs.forEach(c => knownJobs.add(key(c)));
-    if(neu.length){ callQueue = callQueue.filter(x => !neu.some(c => c.id === x.c.id)); notifyNew(neu, 'job'); }   // '새 민원'으로 울리던 건이 내게 지시되면 '새 지시'로 바꿔 다시 알림
+    S.db.complaints.forEach(c => knownJobs.add(key(c)));
+    if(!neu.length) return;
+    callQueue = callQueue.filter(x => !neu.some(c => c.id === x.c.id));   // '새 민원'으로 울리던 건이 지시되면 지시 알림으로 바꿔 다시 울림
+    const mineJ = neu.filter(c => S.me && assigneesOf(c).includes(S.me)), others = neu.filter(c => !mineJ.includes(c));
+    if(others.length) notifyNew(others, 'jobAll');
+    if(mineJ.length) notifyNew(mineJ, 'job');
   }
 }
 function renderBell(){
@@ -404,7 +411,7 @@ function subscribe(){
   });
 }
 setInterval(() => { if(document.visibilityState === 'visible') reload(); }, REFRESH_MS);
-document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ if(pushState === 'denied' && 'Notification' in window && Notification.permission !== 'denied') setupPush(); document.title = document.title.replace(/^\(\d+\) (새 민원 접수|새 지시) · /, ''); reload(); } });
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ if(pushState === 'denied' && 'Notification' in window && Notification.permission !== 'denied') setupPush(); document.title = document.title.replace(/^\(\d+\) [^·]+ · /, ''); reload(); } });
 window.addEventListener('online', () => reload());
 
 async function write(fn){
