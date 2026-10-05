@@ -237,8 +237,9 @@ function speak(text){
 }
 const VIB = [500, 200, 500, 200, 500, 200, 900];
 function placeOf(c){ return c.location || [c.dong, c.ho].filter(Boolean).join(' ') || ''; }
-const callWord = it => it.kind === 'job' ? '나에게 새 지시가 왔습니다' : it.kind === 'jobAll' ? `업무 지시가 나갔습니다. ${namesOf(it.c)}` : '새 민원이 접수되었습니다';
-const callTitle = it => it.kind === 'job' ? '나에게 새 지시' : it.kind === 'jobAll' ? `업무 지시 → ${namesOf(it.c)}` : '새 민원 접수';
+const sirNames = c => assigneesOf(c).map(id => staffName(id) + '님').join(', ');   // 지시받은 직원 이름 + 님
+const callWord = it => it.kind === 'new' ? '새 민원이 접수되었습니다' : `${sirNames(it.c)}, ${it.c.rework ? '재작업' : '업무'} 지시가 왔습니다`;
+const callTitle = it => it.kind === 'new' ? '새 민원 접수' : `${sirNames(it.c)} ${it.c.rework ? '재작업' : '업무'} 지시`;
 /* 확인을 누를 때까지 20초마다 다시 울린다(최대 3분) */
 let ringTimer = null, ringUntil = 0;
 function ring(first){
@@ -246,7 +247,7 @@ function ring(first){
   const it = callQueue[callQueue.length - 1], c = it.c;
   chime();
   try{ if(navigator.vibrate) navigator.vibrate(VIB); }catch(e){}
-  setTimeout(() => speak(first ? `${callWord(it)}. ${placeOf(c)}, ${c.title || ''}` : `${callWord(it)}. 확인해 주세요.`), 3300);
+  setTimeout(() => speak(first ? `${callWord(it)}. ${placeOf(c)}, ${c.title || ''}` : it.kind === 'new' ? `${callWord(it)}. 확인해 주세요.` : `${sirNames(c)}, 지시를 확인해 주세요.`), 3300);
 }
 function stopRing(){ if(ringTimer){ clearInterval(ringTimer); ringTimer = null; } try{ if('speechSynthesis' in window) speechSynthesis.cancel(); }catch(e){} }
 function startRing(){

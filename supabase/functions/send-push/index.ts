@@ -40,13 +40,13 @@ export function plan(p, c, subs, names = {}) {
     // 지시는 그 사업장 직원 전원에게 울린다. 지시받은 직원에게는 '나에게 온 지시'로, 나머지에게는 누구에게 갔는지 보여 준다.
     const ev = p.event || {};
     const ids = (ev.staffIds && ev.staffIds.length ? ev.staffIds : [ev.staffId]).filter(Boolean);
-    const who = ids.map(id => (names && names[id]) || '').filter(Boolean).join(', ');
+    const who = ids.map(id => (names && names[id]) || '').filter(Boolean).map(n => n + '님').join(', ');   // 지시받은 직원 이름 + 님
     const body = short(`${place(d)} · ${d.detail || d.title || ''}${ev.text ? ' ▶ 지시: ' + ev.text : ''}`, 110);
     const rework = p.kind === 'rework';
     return {
       to: subs.filter(s => inSite(s) && s.role === 'staff' && notActor(s)),
-      msg: { title: `${rework ? '🔁 재작업 지시' : '📋 업무 지시'}${who ? ' → ' + who : ''}`, body, tag: `job-${p.id}` },
-      mine: { ids, msg: { title: rework ? '🔁 나에게 재작업 지시' : '📋 나에게 새 지시가 왔습니다', body, tag: `job-${p.id}` } },
+      msg: { title: `${rework ? '🔁' : '📋'} ${who ? who + ' ' : ''}${rework ? '재작업' : '업무'} 지시`, body, tag: `job-${p.id}` },
+      mine: { ids, msg: { title: `${rework ? '🔁' : '📋'} ${who ? who + ', ' : ''}${rework ? '재작업' : '업무'} 지시가 왔습니다`, body, tag: `job-${p.id}` } },
     };
   }
   if (p.kind === 'done' && d.status === 'done') {
