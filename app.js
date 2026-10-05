@@ -1610,7 +1610,7 @@ function complaintView(){
     <h2>${esc(c.title)}</h2>
     <div class="pills"><span class="pill s-${c.status}">${ST[c.status].label}</span>${c.urgent ? '<span class="tag">긴급</span>' : ''}${dueTag(c)}</div>
   </div>
-  <section class="say" aria-label="민원 내용">
+  <section class="say ${c.status === 'done' || c.status === 'replied' ? 'k-done' : 'k-received'}" aria-label="민원 내용">
     <div class="say-h"><span class="say-k">📢 민원 내용</span><span class="say-at">${esc(c.location || '')}${c.category ? ' · ' + esc(c.category) : ''}</span></div>
     <p class="say-t">${esc(c.detail || c.title)}</p>
   </section>
