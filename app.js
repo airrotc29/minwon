@@ -855,6 +855,7 @@ function renderList(){
     <button type="button" class="row${needsTap(c) ? ' blink k-' + (S.role === 'staff' ? 'todo' : c.status) : ''}" data-act="open" data-id="${esc(c.id)}" aria-current="${S.selectedId === c.id && !S.panel}">
       <span class="l1"><span class="no">#${nums[c.id]}</span><span>${esc(c.category)}</span><span>${esc(c.location)}</span>${receiver(c) ? `<span>· ${esc(receiver(c))} 접수</span>` : ''}</span>
       <span class="t">${esc(c.title)}</span>
+      ${c.detail && c.detail.trim() !== (c.title || '').trim() ? `<span class="pv">${esc(c.detail)}</span>` : ''}
       <span class="l3"><span class="pill s-${c.status}">${ST[c.status].label}</span>
         ${c.urgent ? '<span class="tag">긴급</span>' : ''}${c.rework && c.status !== 'replied' && c.status !== 'done' ? '<span class="tag">재작업</span>' : ''}${dueTag(c)}
         <span>${esc(namesOf(c))}</span><span>·</span><span>${fmt(c.createdAt)}</span>${photoCount(c) ? `<span>· 사진 ${photoCount(c)}</span>` : ''}</span>
@@ -1609,15 +1610,18 @@ function complaintView(){
     <h2>${esc(c.title)}</h2>
     <div class="pills"><span class="pill s-${c.status}">${ST[c.status].label}</span>${c.urgent ? '<span class="tag">긴급</span>' : ''}${dueTag(c)}</div>
   </div>
+  <section class="say" aria-label="민원 내용">
+    <div class="say-h"><span class="say-k">📢 민원 내용</span><span class="say-at">${esc(c.location || '')}${c.category ? ' · ' + esc(c.category) : ''}</span></div>
+    <p class="say-t">${esc(c.detail || c.title)}</p>
+  </section>
+  ${order}
   <dl class="meta">
     <div><dt>동·호수</dt><dd>${esc(c.location)}</dd></div>
     ${c.phone ? `<div><dt>민원인 전화</dt><dd><a class="tel" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a></dd></div>` : ''}
     <div><dt>접수자</dt><dd>${esc(receiver(c) || '관리소장')}</dd></div>
     <div><dt>분류 · 경로</dt><dd>${esc(c.category)} · ${esc(c.channel)}</dd></div>
   </dl>
-  ${c.detail ? `<p class="body-text">${esc(c.detail)}</p>` : ''}
   ${householdHTML(c)}
-  ${order}
   <div class="sec"><h3>처리 내역</h3>
     <ol class="tl">${(c.events || []).map(e => { const d = EV[e.type] || EV.received; return `<li style="--c:var(${d.c})"><div class="h"><b>${esc(d.t(e))}</b><time>${fmt(e.at)}</time>${e.due ? `<span class="sub">기한 ${fmtDate(e.due)}</span>` : ''}</div>${e.text ? `<p>${esc(e.text)}</p>` : ''}${thumbsHTML(e.photos)}</li>`; }).join('')}</ol>
   </div>

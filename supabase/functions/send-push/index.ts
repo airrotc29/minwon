@@ -32,7 +32,7 @@ export function plan(p, c, subs) {
   if (p.kind === 'new') {
     return {
       to: subs.filter(s => inSite(s) && (s.role === 'manager' || s.role === 'staff') && notActor(s)),
-      msg: { title: `🔔 새 민원 접수${d.urgent ? ' (긴급)' : ''}`, body: short(`${place(d)} ${d.category || ''} · ${d.title || ''}`), tag: `new-${p.id}` },
+      msg: { title: `🔔 새 민원 접수${d.urgent ? ' (긴급)' : ''}`, body: short(`${place(d)} · ${d.title || ''}${d.detail && d.detail !== d.title ? ' — ' + d.detail : ''}`, 110), tag: `new-${p.id}` },
     };
   }
   if (p.kind === 'assigned' || p.kind === 'reassigned' || p.kind === 'rework') {
@@ -40,7 +40,7 @@ export function plan(p, c, subs) {
     const ids = (ev.staffIds && ev.staffIds.length ? ev.staffIds : [ev.staffId]).filter(Boolean);
     return {
       to: subs.filter(s => inSite(s) && s.role === 'staff' && ids.includes(s.staff_id) && notActor(s)),
-      msg: { title: p.kind === 'rework' ? '🔁 재작업 지시' : '📋 새 지시가 왔습니다', body: short(`${place(d)} · ${d.title || ''}${ev.text ? ' — ' + ev.text : ''}`), tag: `job-${p.id}` },
+      msg: { title: p.kind === 'rework' ? '🔁 재작업 지시' : '📋 새 지시가 왔습니다', body: short(`${place(d)} · ${d.detail || d.title || ''}${ev.text ? ' ▶ 지시: ' + ev.text : ''}`, 110), tag: `job-${p.id}` },
     };
   }
   if (p.kind === 'done' && d.status === 'done') {
