@@ -27,7 +27,8 @@ const short = (t, n = 60) => { t = String(t || '').replace(/\s+/g, ' ').trim(); 
 // 누구에게 무엇을 보낼지 정한다(순수 함수: 시험하기 쉽도록 분리)
 export function plan(p, c, subs) {
   const d = (c && c.data) || {};
-  const notActor = s => !p.actor || s.user_id !== p.actor;
+  // 같은 계정이라도 다른 기기(PC에서 접수 → 휴대폰)에는 보낸다. 접수한 그 기기는 앱 화면이 열려 있어 서비스 워커가 알림을 띄우지 않는다.
+  const notActor = (_s) => true;
   const inSite = s => s.site_id === p.site_id;
   if (p.kind === 'new') {
     return {
