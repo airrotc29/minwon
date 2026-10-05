@@ -722,3 +722,19 @@ a.tel{color:var(--accent);font-weight:600;text-decoration:underline}
 .pushask{margin:0 0 10px;background:#FFF6CC;border-color:#E0B400;color:#3a2f00}
 .pushask b{color:#3a2f00}
 .pushask .hint{color:#5a4a00}
+
+/* ---------- PC 화면: 왼쪽 = 할 일·흐름·검색·목록 / 오른쪽 = 선택한 민원(화면에 붙어 따로 스크롤) ---------- */
+.side{display:flex;flex-direction:column;gap:16px;min-width:0}
+.work.single .side{display:none}
+@media (min-width:821px){
+  .work{grid-template-columns:minmax(330px,400px) minmax(0,1fr);gap:20px}
+  .work.single{grid-template-columns:minmax(0,1fr)}
+  .side .summary{flex-direction:column;align-items:stretch;gap:10px}
+  .side .summary .search{max-width:none;margin-top:0}
+  .work:not(.single) > .detail{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;overscroll-behavior:contain}
+  .todo-card b{font-size:28px}
+}
+@media (min-width:1280px){
+  .app{max-width:1320px}
+  .work{grid-template-columns:420px minmax(0,1fr)}
+}

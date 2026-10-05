@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=82">
+  <link rel="stylesheet" href="style.css?v=83">
 </head>
 <body>
 <div class="app">
@@ -59,7 +59,6 @@
   <div class="newcall" id="newcall" role="alert" aria-live="assertive" hidden></div>
   <div class="install pushask" id="pushask" hidden></div>
   <button type="button" class="alert" id="reply-alert" data-act="filter" data-f="done" hidden></button>
-  <nav class="summary" id="summary" aria-label="상태별 보기"></nav>
   <section class="panel login" id="login" hidden>
     <div class="brand-card" aria-label="선민종합관리(주)">
       <div class="bc-sm">SM</div>
@@ -77,7 +76,10 @@
     </form>
   </section>
   <main class="work">
-    <section class="panel list" id="list" aria-label="민원 목록"></section>
+    <div class="side">
+      <nav class="summary" id="summary" aria-label="상태별 보기"></nav>
+      <section class="panel list" id="list" aria-label="민원 목록"></section>
+    </div>
     <section class="panel detail" id="detail" aria-live="polite"></section>
   </main>
   <div class="install" id="install" hidden></div>
@@ -99,6 +101,6 @@
 <div id="print-area" aria-hidden="true"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js?v=11"></script>
-<script src="app.js?v=106"></script>
+<script src="app.js?v=107"></script>
 </body>
 </html>

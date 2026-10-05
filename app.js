@@ -868,6 +868,8 @@ function renderDetail(){
   // 상태가 바뀌면(다른 기기의 보고 등) 화면의 입력 칸 구성이 달라지므로 새로 그린다
   const cur = S.selectedId && find(S.selectedId);
   const key = [S.panel, S.selectedId, S.role, S.me, cur ? cur.status : ''].join('|');
+  const viewKey = [S.panel, S.selectedId].join('|');               // 다른 민원·화면으로 바뀌면 상세 칸을 맨 위부터
+  if(el.dataset.view !== viewKey){ el.dataset.view = viewKey; el.scrollTop = 0; }
   const saved = {}, openDet = [];
   let focusId = null;
   if(key !== lastKey) clearPending();
