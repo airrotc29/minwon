@@ -330,7 +330,7 @@ function renderPush(){
   if(pushState === 'ask'){ msg = '<b>📲 앱을 꺼 두어도 알림 받기</b><span class="hint">새 민원·업무 지시·완료 보고가 오면 휴대폰이 울립니다.</span>'; btn = '<button type="button" class="btn primary" data-act="push-on">알림 켜기</button>'; }
   else if(pushState === 'inapp'){ msg = '<b>📲 앱이 꺼져 있어도 알림을 받으려면</b><span class="hint">카톡 안 화면에서는 알림을 켤 수 없습니다. 크롬(기본 브라우저)이나 바탕화면 아이콘으로 열어 주세요.</span>'; if(inKakao) btn = '<button type="button" class="btn primary" data-act="open-browser">크롬에서 열기</button>'; }
   else if(pushState === 'ios'){ msg = '<b>📲 아이폰에서 알림을 받으려면</b><span class="hint">사파리 공유 버튼(⬆) → <b>홈 화면에 추가</b> 후, 바탕화면 아이콘으로 열어 <b>알림 켜기</b>를 눌러 주세요. (iOS 16.4 이상)</span>'; }
-  else { msg = '<b>🔕 이 휴대폰은 알림이 차단되어 있습니다</b><span class="hint">주소창 왼쪽 자물쇠(또는 휴대폰 설정 → 앱 → 크롬) → <b>알림 허용</b>으로 바꾼 뒤 새로 고쳐 주세요.</span>'; }
+  else { msg = `<b>🔕 이 휴대폰은 알림이 차단되어 있습니다</b><span class="hint">${standalone() ? '바탕화면의 <b>민원관리 아이콘을 길게 누르고 ⓘ(앱 정보) → 알림 → 허용</b>으로 바꾼 뒤 앱을 다시 열어 주세요.' : '주소창 왼쪽 <b>자물쇠(⚙) → 권한 → 알림 → 허용</b>으로 바꾼 뒤 새로 고쳐 주세요.'}</span>`; }
   el.innerHTML = `<div>${msg}</div><div class="btns">${btn}<button type="button" class="btn sm" data-act="push-later">나중에</button></div>`;
 }
 if('serviceWorker' in navigator){
@@ -355,7 +355,7 @@ function subscribe(){
   });
 }
 setInterval(() => { if(document.visibilityState === 'visible') reload(); }, REFRESH_MS);
-document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ document.title = document.title.replace(/^\(\d+\) 새 민원 접수 · /, ''); reload(); } });
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ if(pushState === 'denied' && 'Notification' in window && Notification.permission !== 'denied') setupPush(); document.title = document.title.replace(/^\(\d+\) 새 민원 접수 · /, ''); reload(); } });
 window.addEventListener('online', () => reload());
 
 async function write(fn){
