@@ -1604,12 +1604,20 @@ function complaintView(){
   const no = numbers()[c.id];
   const mine = S.role === 'staff' && assigneesOf(c).includes(S.me);
   const order = (c.instruction && c.status !== 'received') ? `<div class="order${c.rework ? ' rework' : ''}"><span class="k">${c.rework ? '재작업 지시' : '지시 사항'} · ${esc(namesOf(c))}${assigneesOf(c).length > 1 && (c.status === 'assigned' || c.status === 'progress') ? ` · 완료 보고 ${doneBy(c).size}/${assigneesOf(c).length}` : ''}${c.due ? ' · 기한 ' + fmtDate(c.due) : ''}</span><p>${esc(c.instruction)}</p></div>` : '';
+  const sayBlock = `
+  <section class="say ${c.status === 'done' || c.status === 'replied' ? 'k-done' : 'k-received'}" aria-label="민원 내용">
+    <div class="say-h"><span class="say-k">📢 민원 내용</span><span class="say-at">${esc(c.location || '')}${c.category ? ' · ' + esc(c.category) : ''}</span></div>
+    <p class="say-t">${esc(c.detail || c.title)}</p>
+  </section>
+  ${order}`;
+  const replyNow = S.role === 'manager' && c.status === 'done';      // 회신해 주세요: 민원 내용을 맨 위(원래 자리)에, 그 밖에는 처리 내역 아래 할 일 칸 바로 위에
   return `
   <div class="d-head">
     <span class="no">#${no} · 접수 ${fmt(c.createdAt)}</span>
     <h2>${esc(c.title)}</h2>
     <div class="pills"><span class="pill s-${c.status}">${ST[c.status].label}</span>${c.urgent ? '<span class="tag">긴급</span>' : ''}${dueTag(c)}</div>
   </div>
+  ${replyNow ? sayBlock : ''}
   <dl class="meta">
     <div><dt>동·호수</dt><dd>${esc(c.location)}</dd></div>
     ${c.phone ? `<div><dt>민원인 전화</dt><dd><a class="tel" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a></dd></div>` : ''}
@@ -1620,11 +1628,7 @@ function complaintView(){
   <div class="sec"><h3>처리 내역</h3>
     <ol class="tl">${(c.events || []).map(e => { const d = EV[e.type] || EV.received; return `<li style="--c:var(${d.c})"><div class="h"><b>${esc(d.t(e))}</b><time>${fmt(e.at)}</time>${e.due ? `<span class="sub">기한 ${fmtDate(e.due)}</span>` : ''}</div>${e.text ? `<p>${esc(e.text)}</p>` : ''}${thumbsHTML(e.photos)}</li>`; }).join('')}</ol>
   </div>
-  <section class="say ${c.status === 'done' || c.status === 'replied' ? 'k-done' : 'k-received'}" aria-label="민원 내용">
-    <div class="say-h"><span class="say-k">📢 민원 내용</span><span class="say-at">${esc(c.location || '')}${c.category ? ' · ' + esc(c.category) : ''}</span></div>
-    <p class="say-t">${esc(c.detail || c.title)}</p>
-  </section>
-  ${order}
+  ${replyNow ? '' : sayBlock}
   ${S.role === 'manager' ? managerActions(c) : staffActions(c, mine)}`;
 }
 
