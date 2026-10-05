@@ -202,51 +202,100 @@ function unlockAudio(){
   renderBell();
 }
 document.addEventListener('pointerdown', () => { if(!audioReady) unlockAudio(); }, {once:false, passive:true});
+/* 알림음: 크고 또렷하게(삼각파 + 압축기), '딩-동-댕' 세 번 */
 function chime(){
   if(!audioCtx) return;
   try{
-    const t0 = audioCtx.currentTime + 0.02;
-    const notes = [659.25, 783.99, 1046.5];                       // 미 · 솔 · 도
-    [0, 1.3].forEach(rep => notes.forEach((f, i) => {
-      const t = t0 + rep + i * 0.28, o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.type = 'sine'; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
-      o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + 0.75);
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 6; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.2;
+    const master = audioCtx.createGain(); master.gain.value = 1.6;
+    comp.connect(master); master.connect(audioCtx.destination);
+    const t0 = audioCtx.currentTime + 0.03;
+    const notes = [[1318.5, 0], [987.8, 0.32], [1568, 0.64]];      // 미 · 시 · 솔(높은 음이 멀리서도 잘 들림)
+    [0, 1.25, 2.5].forEach(rep => notes.forEach(([f, dt]) => {
+      const t = t0 + rep + dt;
+      [['triangle', 1], ['square', 0.18]].forEach(([type, vol]) => {   // 사각파를 조금 섞어 휴대폰 스피커에서도 또렷하게
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = type; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+        o.connect(g); g.connect(comp); o.start(t); o.stop(t + 0.65);
+      });
     }));
   }catch(e){}
 }
+/* 음성 안내: "새 민원이 접수되었습니다. 101동 1203호, 누수" */
+function speak(text){
+  try{
+    if(!('speechSynthesis' in window) || !text) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR'; u.rate = 1; u.volume = 1; u.pitch = 1;
+    const v = speechSynthesis.getVoices().find(x => /^ko/i.test(x.lang)); if(v) u.voice = v;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+const VIB = [500, 200, 500, 200, 500, 200, 900];
 function placeOf(c){ return c.location || [c.dong, c.ho].filter(Boolean).join(' ') || ''; }
-function notifyNew(list){
-  if(!alertOn() || !list.length) return;
+const callWord = it => it.kind === 'job' ? '새 지시가 왔습니다' : '새 민원이 접수되었습니다';
+/* 확인을 누를 때까지 20초마다 다시 울린다(최대 3분) */
+let ringTimer = null, ringUntil = 0;
+function ring(first){
+  if(!callQueue.length){ stopRing(); return; }
+  const it = callQueue[callQueue.length - 1], c = it.c;
   chime();
-  try{ if(navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 500]); }catch(e){}
-  callQueue = callQueue.concat(list);
+  try{ if(navigator.vibrate) navigator.vibrate(VIB); }catch(e){}
+  setTimeout(() => speak(first ? `${callWord(it)}. ${placeOf(c)}, ${c.title || ''}` : `${callWord(it)}. 확인해 주세요.`), 3300);
+}
+function stopRing(){ if(ringTimer){ clearInterval(ringTimer); ringTimer = null; } try{ if('speechSynthesis' in window) speechSynthesis.cancel(); }catch(e){} }
+function startRing(){
+  ring(true);
+  ringUntil = Date.now() + 3 * 60000;
+  if(!ringTimer) ringTimer = setInterval(() => { if(Date.now() > ringUntil || !callQueue.length) stopRing(); else ring(false); }, 20000);
+}
+function notifyNew(list, kind){
+  if(!alertOn() || !list.length) return;
+  callQueue = callQueue.concat(list.map(c => ({c, kind:kind || 'new'})));
   renderCall();
-  const c = list[list.length - 1];
+  startRing();
+  const it = callQueue[callQueue.length - 1], c = it.c;
   const text = `${S.allSites ? siteName(siteOf(c)) + ' · ' : ''}${placeOf(c)} ${c.category || ''} ${c.title || ''}`.trim();
+  const title = it.kind === 'job' ? '새 지시' : '새 민원 접수';
   if(document.hidden){
-    document.title = `(${callQueue.length}) 새 민원 접수 · ${document.title.replace(/^\(\d+\) 새 민원 접수 · /, '')}`;
+    document.title = `(${callQueue.length}) ${title} · ${document.title.replace(/^\(\d+\) (새 민원 접수|새 지시) · /, '')}`;
     if('Notification' in window && Notification.permission === 'granted'){
-      const opt = {body:text, tag:'minwon-new', renotify:true, vibrate:[300, 150, 300], icon:'icon-192.png'};
-      navigator.serviceWorker && navigator.serviceWorker.ready ? navigator.serviceWorker.ready.then(r => r.showNotification('새 민원 접수', opt)).catch(() => { try{ new Notification('새 민원 접수', opt); }catch(e){} }) : (() => { try{ new Notification('새 민원 접수', opt); }catch(e){} })();
+      const opt = {body:text, tag:'minwon-new', renotify:true, requireInteraction:true, vibrate:VIB, icon:'icon-192.png'};
+      navigator.serviceWorker && navigator.serviceWorker.ready ? navigator.serviceWorker.ready.then(r => r.showNotification(title, opt)).catch(() => { try{ new Notification(title, opt); }catch(e){} }) : (() => { try{ new Notification(title, opt); }catch(e){} })();
     }
   }
 }
 function renderCall(){
   const el = $('#newcall'); if(!el) return;
-  if(!callQueue.length){ el.hidden = true; return; }
-  const c = callQueue[callQueue.length - 1], more = callQueue.length - 1;
+  if(!callQueue.length){ el.hidden = true; stopRing(); return; }
+  const it = callQueue[callQueue.length - 1], c = it.c, more = callQueue.length - 1;
   el.hidden = false;
-  el.innerHTML = `<span class="nc-ico" aria-hidden="true">🔔</span><span class="nc-text"><b>새 민원 접수${more ? ` 외 ${more}건` : ''}</b>${S.allSites ? esc(siteName(siteOf(c))) + ' · ' : ''}${esc(placeOf(c))} ${esc(c.category || '')} ${esc(c.title || '')}</span><button type="button" class="btn sm" data-act="call-open" data-id="${esc(c.id)}">확인</button>`;
+  el.innerHTML = `<span class="nc-ico" aria-hidden="true">${it.kind === 'job' ? '📋' : '🔔'}</span><span class="nc-text"><b>${it.kind === 'job' ? '새 지시' : '새 민원 접수'}${more ? ` 외 ${more}건` : ''}</b>${S.allSites ? esc(siteName(siteOf(c))) + ' · ' : ''}${esc(placeOf(c))} ${esc(c.category || '')} ${esc(c.title || '')}</span><button type="button" class="btn sm" data-act="call-open" data-id="${esc(c.id)}">확인</button>`;
 }
-/* 새로 생긴 민원이 있으면 알린다. 접수한 지 30분이 넘은 것(복원·오래 꺼져 있던 뒤)은 알리지 않는다 */
+/* 새로 생긴 민원이 있으면 알린다. 접수한 지 30분이 넘은 것(복원·오래 꺼져 있던 뒤)은 알리지 않는다.
+   직원 화면이면 나에게 새로 지시된 민원도 알린다. */
+let knownJobs = null;
 function checkNew(){
   if(!SERVER || !S.user) return;
   const ids = S.db.complaints.map(c => c.id);
-  if(knownIds === null){ knownIds = new Set(ids); return; }
-  const fresh = S.db.complaints.filter(c => !knownIds.has(c.id) && !mineIds.has(c.id) && Date.now() - new Date(c.createdAt || 0).getTime() < 30 * 60000);
-  ids.forEach(id => knownIds.add(id));
-  if(fresh.length) notifyNew(fresh);
+  if(knownIds === null){ knownIds = new Set(ids); }
+  else {
+    const fresh = S.db.complaints.filter(c => !knownIds.has(c.id) && !mineIds.has(c.id) && Date.now() - new Date(c.createdAt || 0).getTime() < 30 * 60000);
+    ids.forEach(id => knownIds.add(id));
+    if(fresh.length) notifyNew(fresh, 'new');
+  }
+  if(S.role === 'staff' && S.me){
+    const jobs = S.db.complaints.filter(c => isTodo(c) && assigneesOf(c).includes(S.me));
+    const key = c => c.id + '|' + (c.events || []).filter(e => e.type === 'assigned' || e.type === 'reassigned' || e.type === 'rework').map(e => e.id).sort().join(',');   // 다시 지시·재작업도 새 지시로
+    if(knownJobs === null || knownJobs.me !== S.me){ knownJobs = new Set(jobs.map(key)); knownJobs.me = S.me; return; }
+    const neu = jobs.filter(c => !knownJobs.has(key(c)));
+    jobs.forEach(c => knownJobs.add(key(c)));
+    if(neu.length){ callQueue = callQueue.filter(x => !neu.some(c => c.id === x.c.id)); notifyNew(neu, 'job'); }   // '새 민원'으로 울리던 건이 내게 지시되면 '새 지시'로 바꿔 다시 알림
+  }
 }
 function renderBell(){
   const b = $('#bell'); if(!b) return;     // 알림 버튼은 없앰(소장·직원은 항상 켜짐, 본사·임원은 꺼짐)
@@ -355,7 +404,7 @@ function subscribe(){
   });
 }
 setInterval(() => { if(document.visibilityState === 'visible') reload(); }, REFRESH_MS);
-document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ if(pushState === 'denied' && 'Notification' in window && Notification.permission !== 'denied') setupPush(); document.title = document.title.replace(/^\(\d+\) 새 민원 접수 · /, ''); reload(); } });
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ if(pushState === 'denied' && 'Notification' in window && Notification.permission !== 'denied') setupPush(); document.title = document.title.replace(/^\(\d+\) (새 민원 접수|새 지시) · /, ''); reload(); } });
 window.addEventListener('online', () => reload());
 
 async function write(fn){
@@ -2024,7 +2073,7 @@ document.addEventListener('click', e => {
   else if(a === 'link-copy'){ copyText(staffLink()); }
   else if(a === 'role'){ if(S.mgrOnly || (b.dataset.role === 'manager' && !S.canManage)) return; S.role = b.dataset.role; lsSet('role', S.role); S.panel = null; S.filter = S.role === 'staff' ? 'todo' : 'open'; S.selectedId = null; render(); }
   else if(a === 'filter'){ S.filter = b.dataset.f; render(); }
-  else if(a === 'open'){ markSeen(find(b.dataset.id)); S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
+  else if(a === 'open'){ if(callQueue.some(x => x.c.id === b.dataset.id)){ callQueue = callQueue.filter(x => x.c.id !== b.dataset.id); renderCall(); } markSeen(find(b.dataset.id)); S.selectedId = b.dataset.id; S.panel = null; render(); if(matchMedia('(max-width:820px)').matches) $('#detail').scrollIntoView({block:'start'}); }
   else if(a === 'new'){
     if(S.role === 'staff' && !S.me){ toast('먼저 오른쪽 위에서 내 이름을 선택하세요'); $('#me-select').focus(); return; }
     S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
@@ -2372,7 +2421,7 @@ async function onSignedIn(user){
 }
 function onSignedOut(){
   S.user = null; S.access = {}; S.hq = false; S.exec = false; S.allSites = false; S.panel = null;
-  knownIds = null; callQueue = []; renderCall();
+  knownIds = null; knownJobs = null; callQueue = []; renderCall();
   pushState = ''; pushSaved = ''; renderPush();
   if(channel){ sb.removeChannel(channel); channel = null; }
   applyData(emptyData());

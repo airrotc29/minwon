@@ -11,7 +11,7 @@ self.addEventListener('push', e => {
     if(list.some(c => c.visibilityState === 'visible' && c.focused !== false)) return;
     return self.registration.showNotification(d.title || '민원관리 알림', {
       body: d.body || '', tag: d.tag || 'minwon', renotify: true, requireInteraction: true,
-      icon: 'icon-192.png', badge: 'icon-192.png', vibrate: [300, 150, 300, 150, 500],
+      icon: 'icon-192.png', badge: 'icon-192.png', vibrate: [500, 200, 500, 200, 500, 200, 900],
       data: {id: d.id || null}
     });
   }));
