@@ -1828,7 +1828,7 @@ function wrapLines(ctx, text, maxW){
   return out;
 }
 async function buildReplyCard(text, files, c){
-  const W = 1080, P = 64, FW = W - P * 2, font = '"IBM Plex Sans KR","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif';
+  const W = 1080, P = 64, FW = W - P * 2, font = '"Pretendard Variable","Pretendard","IBM Plex Sans KR","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif';
   const imgs = [];
   for(const f of files.slice(0, 4)){ try{ imgs.push(await createImageBitmap(f)); }catch(e){} }
   const cv = document.createElement('canvas'), ctx = cv.getContext('2d');
