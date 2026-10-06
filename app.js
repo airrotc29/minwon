@@ -1039,6 +1039,19 @@ function reportMeta(ym){
 function bar(v, max){ return `<span class="rbar"><i style="width:${max ? Math.round(v / max * 100) : 0}%"></i></span>`; }
 function reportHTML(ym, meta){
   const d = reportData(ym), nums = numbers();
+  // 전월 대비: 관리단이 한눈에 개선 여부를 보도록 증감을 함께 적는다(good: 늘면 좋은 지표인지)
+  const pm = (() => { const [y, m] = ym.split('-').map(Number); const t = new Date(y, m - 2, 1); return `${t.getFullYear()}-${p2(t.getMonth() + 1)}`; })();
+  const pd = reportData(pm);
+  const delta = (cur, prev, good, unit = '', dec = 0) => {
+    if(cur == null || prev == null) return `<em class="r-d">전월 -</em>`;
+    const v = Math.round((cur - prev) * Math.pow(10, dec)) / Math.pow(10, dec);
+    if(!v) return `<em class="r-d">전월과 같음</em>`;
+    const up = v > 0, cls = good == null ? '' : (up === good ? ' up' : ' dn');
+    return `<em class="r-d${cls}">전월 대비 ${up ? '▲' : '▼'}${Math.abs(v)}${unit}</em>`;
+  };
+  const summary = d.recv.length || d.closedInMonth.length
+    ? `${monthLabel(ym)} 한 달 동안 민원 <b>${d.recv.length}건</b>을 접수하여 <b>${d.closedInMonth.length}건</b>을 민원인 회신까지 마쳤습니다${d.avgDays != null ? `(평균 <b>${fmtDays(d.avgDays)}</b> 소요)` : ''}. 월말 기준 미결은 <b>${d.openEnd.length}건</b>입니다.`
+    : `${monthLabel(ym)}에는 접수된 민원이 없습니다.`;
   const max = Math.max(1, ...d.byCat.map(g => g.total));
   const stLabel = c => ST[c.status] ? ST[c.status].label : c.status;
   const doneText = c => { const ev = lastEv(c, 'done'); return ev ? ev.text : ''; };
@@ -1059,13 +1072,14 @@ function reportHTML(ym, meta){
     </dl>
 
     <h2>1. 처리 현황 요약</h2>
+    <p class="r-sum">${summary}</p>
     <div class="r-kpis">
-      <div><b>${d.recv.length}</b><span>이달 접수</span></div>
-      <div><b>${d.closedInMonth.length}</b><span>이달 처리 완료</span></div>
-      <div><b>${fmtPct(d.rate)}</b><span>이달 접수분 처리율</span></div>
-      <div><b>${fmtDays(d.avgDays)}</b><span>평균 처리 기간</span></div>
-      <div><b>${d.openEnd.length}</b><span>월말 미결</span></div>
-      <div><b>${d.urgent}</b><span>긴급 민원</span></div>
+      <div><b>${d.recv.length}</b><span>이달 접수</span>${delta(d.recv.length, pd.recv.length, null, '건')}</div>
+      <div class="hl"><b>${d.closedInMonth.length}</b><span>이달 처리 완료</span>${delta(d.closedInMonth.length, pd.closedInMonth.length, true, '건')}</div>
+      <div class="hl"><b>${fmtPct(d.rate)}</b><span>이달 접수분 처리율</span>${delta(d.rate, pd.rate, true, '%p', 1)}</div>
+      <div><b>${fmtDays(d.avgDays)}</b><span>평균 처리 기간</span>${delta(d.avgDays, pd.avgDays, false, '일', 1)}</div>
+      <div><b>${d.openEnd.length}</b><span>월말 미결</span>${delta(d.openEnd.length, pd.openEnd.length, false, '건')}</div>
+      <div><b>${d.urgent}</b><span>긴급 민원</span>${delta(d.urgent, pd.urgent, null, '건')}</div>
     </div>
     <ul class="r-notes">
       <li>전월 이월 미결 ${d.carried.length}건, 이달 접수 ${d.recv.length}건(직원 현장 접수 ${d.byStaffReceived}건) 중 ${d.doneRecv.length}건 회신 완료</li>

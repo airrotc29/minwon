@@ -866,3 +866,12 @@ details.more summary{font-weight:700;padding:4px 0}
 /* 꼬리 */
 .foot{opacity:.9;padding-top:12px}
 .foot b{font-weight:700}
+
+/* 월간 보고서: 한 줄 요약 + 전월 대비 증감(관리단이 개선 여부를 한눈에) */
+.r-sum{margin:4px 0 10px;padding:9px 12px;background:#EEF3FB;border-left:3px solid #1E3A7B;border-radius:0 6px 6px 0;color:#141B2D;line-height:1.6}
+.r-sum b{color:#1E3A7B}
+.r-kpis div.hl{border-color:#1E3A7B;background:#F5F8FD}
+.r-kpis div.hl b{color:#1E3A7B}
+.r-d{display:block;font-style:normal;font-size:10.5px;color:#7A8193;margin-top:2px;white-space:nowrap}
+.r-d.up{color:#1F7A4E}.r-d.dn{color:#C0392B}
+@media print{.r-sum{background:#EEF3FB!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.r-kpis div.hl{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
