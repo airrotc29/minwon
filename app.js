@@ -1127,6 +1127,10 @@ function reportView(){
       <label class="fld"><span>수신</span><input type="text" id="mr-to" value="${esc(m.to)}" placeholder="○○ 관리단"></label>
       <label class="fld"><span>발신</span><input type="text" id="mr-from" value="${esc(m.from)}"></label>
     </div>
+    ${S.exec ? '' : `<div class="ai-bar">
+      <button type="button" class="btn ai" data-act="report-ai" id="ai-btn"><span class="ai-ic" aria-hidden="true">✦</span> AI 검토 결과</button>
+      <span class="hint" id="ai-msg">${monthLabel(ym)} 데이터를 근거로 의견·계획 초안을 만들어 아래 칸에 채웁니다. 확인·수정 후 저장하세요.</span>
+    </div>`}
     <label class="fld"><span>특이사항 및 관리소장 의견</span><textarea id="mr-note" rows="4" placeholder="예) 9월 누수 민원 증가(5건) — 노후 배관 점검 필요. 105동 주차 민원 반복 접수.">${esc(m.note)}</textarea></label>
     <label class="fld"><span>다음 달 계획</span><textarea id="mr-plan" rows="3" placeholder="예) 105동 지하주차장 조명 교체, 동절기 대비 배관 동파 예방 점검">${esc(m.plan)}</textarea></label>
     <div class="btns">
@@ -1139,6 +1143,83 @@ function reportView(){
     <p class="hint">의견을 고치면 아래 미리보기에 바로 반영됩니다. 인쇄 창에서 '대상: PDF로 저장'을 고르면 파일로 저장해 관리단에 보낼 수 있습니다.</p>
   </form>
   <div class="report-preview" id="report-preview">${reportHTML(ym, m)}</div>`;
+}
+/* AI 검토: 그 달 집계를 서버 함수(ai-review)에 보내 의견·계획 초안을 받는다. 전화번호·민원인 정보는 보내지 않는다 */
+const prevYm = ym => { const [y, m] = ym.split('-').map(Number); const t = new Date(y, m - 2, 1); return `${t.getFullYear()}-${p2(t.getMonth() + 1)}`; };
+function aiPayload(ym){
+  const d = reportData(ym), pd = reportData(prevYm(ym)), today = new Date();
+  const r1 = v => v == null ? null : Math.round(v * 10) / 10;
+  const kpi = x => ({접수:x.recv.length, 처리완료:x.closedInMonth.length, 처리율:x.rate, 평균처리일:r1(x.avgDays), 월말미결:x.openEnd.length, 전월이월:x.carried.length, 긴급:x.urgent, 기한건수:x.dueTotal, 기한내완료:x.onTime, 기한준수율:x.dueRate, 직원현장접수:x.byStaffReceived});
+  const cut = (t, n) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
+  const item = c => { const done = lastEv(c, 'done'), end = closedAt(c);
+    return {접수일:ymd(new Date(c.createdAt)), 장소:c.location || '', 분류:c.category || '기타', 긴급:!!c.urgent, 내용:cut(c.title, 80), 상세:c.detail && c.detail !== c.title ? cut(c.detail, 160) : '',
+      상태:ST[c.status] ? ST[c.status].label : c.status, 처리내용:done ? cut(done.text, 160) : '', 처리일수:end ? r1(days(new Date(c.createdAt), end)) : null,
+      경과일:end ? null : Math.floor(days(new Date(c.createdAt), today)), 기한:c.due || ''}; };
+  const grp = list => list.map(g => ({이름:g.key, 접수:g.total, 완료:g.done, 미결:g.open}));
+  return {
+    건물:S.settings.buildingName || siteName(), 보고월:monthLabel(ym), 다음달:monthLabel((() => { const [y, m] = ym.split('-').map(Number); const t = new Date(y, m, 1); return `${t.getFullYear()}-${p2(t.getMonth() + 1)}`; })()),
+    이달:kpi(d), 전월:kpi(pd),
+    분류별:grp(d.byCat), 전월분류별:grp(pd.byCat), 동별:grp(d.byDong),
+    담당자별:d.byStaff.map(g => ({이름:g.key, 배정:g.total, 완료:g.done, 평균처리일:r1(g.avg)})),
+    이달민원:d.recv.slice(0, 150).map(item), 전월이월미결:d.carried.slice(0, 50).map(item)
+  };
+}
+/* 서버 AI를 못 쓸 때(설정 전·오프라인) 같은 데이터로 만드는 규칙 기반 초안 */
+function ruleReview(ym){
+  const d = reportData(ym), pd = reportData(prevYm(ym)), note = [], plan = [];
+  const diff = (a, b) => a - b > 0 ? `전월 대비 ${a - b}건 증가` : a - b < 0 ? `전월 대비 ${b - a}건 감소` : '전월과 같음';
+  const nm = Number(ym.split('-')[1]) % 12 + 1;
+  if(!d.recv.length && !d.carried.length){
+    note.push(`- ${monthLabel(ym)} 접수 민원 없음, 이월 미결 없음`);
+  } else {
+    note.push(`- 이달 접수 ${d.recv.length}건(${diff(d.recv.length, pd.recv.length)}), 처리 완료 ${d.closedInMonth.length}건${d.rate != null ? `, 이달 접수분 처리율 ${d.rate}%` : ''}${d.avgDays != null ? `, 평균 ${fmtDays(d.avgDays)} 소요` : ''}`);
+    const top = d.byCat[0];
+    if(top && top.total >= 2){ const pt = pd.byCat.find(g => g.key === top.key); note.push(`- ${top.key} 민원이 ${top.total}건으로 가장 많음${pt ? `(전월 ${pt.total}건)` : ''} — 원인 확인 필요`); }
+    const hot = d.byDong.filter(g => g.total >= 2 && g.key !== '-');
+    if(hot.length) note.push(`- ${hot.slice(0, 3).map(g => `${g.key} ${g.total}건`).join(', ')} 반복 접수 — 동일 원인 여부 점검 필요`);
+    if(d.urgent){ const k = d.recv.filter(c => c.urgent && closedAt(c) && closedAt(c) < d.e).length; note.push(`- 긴급 민원 ${d.urgent}건 접수, ${k ? `${k}건 회신 완료` : '월말 기준 회신 전 — 우선 처리 필요'}`); }
+    if(d.dueTotal) note.push(`- 처리 기한 ${d.dueTotal}건 중 ${d.onTime}건 기한 내 완료(${fmtPct(d.dueRate)})`);
+    if(d.openEnd.length) note.push(`- 월말 미결 ${d.openEnd.length}건 — 지연 사유 확인 후 조치 예정`);
+    else note.push('- 월말 기준 미결 없이 전 건 회신 완료');
+  }
+  if(d.openEnd.length) plan.push(`- 미결 ${d.openEnd.length}건 우선 처리 및 민원인 진행 상황 안내`);
+  const top = d.byCat[0];
+  if(top && top.total >= 2) plan.push(`- ${top.key} 관련 시설 점검 및 재발 방지 조치 검토`);
+  const hot = d.byDong.filter(g => g.total >= 2 && g.key !== '-');
+  if(hot.length) plan.push(`- ${hot[0].key} 현장 점검 및 필요 시 안내문 게시`);
+  const season = {12:'동절기 배관 동파 예방 점검, 제설 자재 확보', 1:'동파 예방 순찰 강화, 제설 대비', 2:'해빙기 시설물(옹벽·배수로) 점검', 3:'해빙기 안전점검, 봄철 대청소', 4:'봄철 조경 정비, 배수로 정비', 5:'냉방설비 사전 점검', 6:'장마 대비 배수펌프·우수관 점검', 7:'집중호우·폭염 대비 시설 점검', 8:'태풍 대비 외부 시설물 고정 점검', 9:'추석 연휴 비상연락체계 점검', 10:'동절기 대비 난방·보온 설비 점검', 11:'동파 예방 보온 작업, 소방시설 점검'}[nm];
+  if(season) plan.push(`- 계절 대비: ${season}`);
+  plan.push('- 민원 접수 후 당일 지시·회신 원칙 유지');
+  return {note:note.join('\n'), plan:plan.join('\n')};
+}
+async function reportAI(btn){
+  const ym = S.reportMonth, note = document.getElementById('mr-note'), planEl = document.getElementById('mr-plan'), msg = document.getElementById('ai-msg');
+  if(!note || !planEl) return;
+  if((note.value.trim() || planEl.value.trim()) && !confirm('지금 적힌 의견·계획을 AI 검토 결과로 바꿀까요?')) return;
+  const label = btn.innerHTML;
+  btn.disabled = true; btn.classList.add('busy'); btn.innerHTML = '<span class="ai-ic spin" aria-hidden="true">✦</span> 검토 중…';
+  if(msg) msg.textContent = `${monthLabel(ym)} 데이터를 분석하고 있습니다(20~60초).`;
+  let r = null, why = '';
+  if(SERVER && sb){
+    try{
+      const {data, error} = await sb.functions.invoke('ai-review', {body:{site:S.site, month:monthLabel(ym), data:aiPayload(ym)}});
+      if(error){ let m = ''; try{ m = (await error.context.json()).error; }catch(_){} throw new Error(m || error.message); }
+      if(data && (data.note || data.plan)) r = data;
+      else throw new Error((data && data.error) || '빈 결과');
+    }catch(e){ console.error(e); why = e.message || String(e); }
+  } else why = '서버 미연결';
+  const ai = !!r;
+  if(!r) r = ruleReview(ym);
+  if(!S.reportMonth || S.reportMonth !== ym || !document.getElementById('mr-note')) return;
+  const set = (el, v) => { el.value = v || ''; el.dispatchEvent(new Event('input', {bubbles:true})); };
+  set(note, r.note); set(planEl, r.plan);
+  btn.disabled = false; btn.classList.remove('busy'); btn.innerHTML = label;
+  note.classList.add('ai-filled'); planEl.classList.add('ai-filled');
+  setTimeout(() => { note.classList.remove('ai-filled'); planEl.classList.remove('ai-filled'); }, 2400);
+  if(msg) msg.innerHTML = ai
+    ? `<b>AI 검토 결과</b>를 채웠습니다. 사실과 다른 내용이 없는지 확인·수정한 뒤 <b>의견 저장</b>을 누르세요.`
+    : `AI 서버에 연결하지 못해 <b>자동 초안(규칙 기반)</b>을 채웠습니다${why ? ` <small>(${esc(why)})</small>` : ''}. 확인·수정 후 저장하세요.`;
+  toast(ai ? 'AI 검토 결과를 채웠습니다 — 확인 후 저장하세요' : '자동 초안을 채웠습니다 — 확인 후 저장하세요');
 }
 function currentReportMeta(){
   return {to:val('mr-to'), from:val('mr-from'), note:val('mr-note'), plan:val('mr-plan')};
@@ -2101,6 +2182,7 @@ document.addEventListener('click', e => {
     S.panel = 'new'; render(); $('#detail').scrollIntoView({block:'nearest'}); const f = document.getElementById('n-dong'); if(f) f.focus(); }
   else if(a === 'report'){ if(!S.canManage && !S.exec) return; S.panel = 'report'; render(); $('#detail').scrollIntoView({block:'start'}); }
   else if(a === 'report-print'){ if(S.canManage || S.exec) printReport(); }
+  else if(a === 'report-ai'){ if(S.canManage) reportAI(b); }
   else if(a === 'report-csv'){ if(S.canManage || S.exec) reportCSV(); }
   else if(a === 'settings'){ if(!S.canManage) return; S.panel = 'settings'; render(); $('#detail').scrollIntoView({block:'nearest'}); }
   else if(a === 'cancel'){ S.panel = null; render(); }

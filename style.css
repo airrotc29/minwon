@@ -875,3 +875,16 @@ details.more summary{font-weight:700;padding:4px 0}
 .r-d{display:block;font-style:normal;font-size:10.5px;color:#7A8193;margin-top:2px;white-space:nowrap}
 .r-d.up{color:#1F7A4E}.r-d.dn{color:#C0392B}
 @media print{.r-sum{background:#EEF3FB!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.r-kpis div.hl{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
+/* 월간 보고서 · AI 검토 결과 */
+.ai-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;margin:2px 0 10px;border:1px solid var(--accent-soft);border-radius:var(--r);background:linear-gradient(135deg,rgba(124,92,255,.07),rgba(30,58,123,.05))}
+.ai-bar .hint{margin:0;flex:1;min-width:200px}
+.btn.ai{background:linear-gradient(135deg,#5B47E0,#1E3A7B);border-color:transparent;color:#fff;font-weight:600;box-shadow:0 2px 8px rgba(70,60,200,.25)}
+.btn.ai:hover{filter:brightness(1.08)}
+.btn.ai:disabled{opacity:.85;cursor:progress}
+.ai-ic{display:inline-block}
+.ai-ic.spin{animation:aispin 1.1s linear infinite}
+@keyframes aispin{to{transform:rotate(360deg)}}
+textarea.ai-filled{animation:aifill 2.4s ease-out}
+@keyframes aifill{0%{box-shadow:0 0 0 3px rgba(91,71,224,.45);background:rgba(91,71,224,.06)}100%{box-shadow:0 0 0 0 rgba(91,71,224,0)}}
+@media print{.ai-bar{display:none}}
